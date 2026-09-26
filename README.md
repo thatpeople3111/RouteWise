@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RouteWise â€” ShellHacks
 
-## Getting Started
+A shared Next.js App Router project for two collaborators. The UI is still the default starter; travel APIs are not implemented yet.
 
-First, run the development server:
+## Run locally
 
-```bash
+Use Node.js 24 and npm. Open this folder in VS Code, then run:
+
+```sh
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit http://localhost:3000. No API keys are needed for the starter.
+When adding integrations, copy `.env.example` to `.env.local` and enter your own keys locally. Never paste keys into GitHub, chat, source code, or any `NEXT_PUBLIC_` variable. `.env.local` is ignored by Git.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Shared structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `src/app/`: pages and layouts.
+- `src/app/api/`: future backend route handlers.
+- `src/components/`: reusable frontend components.
+- `src/lib/types.ts`: one shared frontend/backend contract (starter proposal; agree on fields together).
+- `src/data/demo.ts`: typed example request.
+- `public/`: static assets.
 
-## Learn More
+Both sides import types with `import type { TripRequest, TripPlan } from "@/lib/types"`.
+Types disappear at runtime: API handlers must validate incoming requests.
 
-To learn more about Next.js, take a look at the following resources:
+## Publish to GitHub (owner)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The configured remote is `https://github.com/thatpeople3111/shellhacks-2026.git`. GitHub authentication must be completed by you. Run:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```sh
+gh auth login --hostname github.com --web
+```
 
-## Deploy on Vercel
+After signing in, from this project folder, create a private repository and push the shared baseline:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```sh
+git switch main
+gh repo create thatpeople3111/shellhacks-2026 --private
+git push -u origin main
+git push -u origin frontend
+git push -u origin backend
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+If a repository already exists, do not create another. Instead use its actual URL:
+
+```sh
+git remote set-url origin https://github.com/thatpeople3111/shellhacks-2026.git
+git push -u origin main
+git push -u origin frontend
+git push -u origin backend
+```
+
+If Git rejects the push because the remote already contains work, fetch and review it; do not force-push.
+In the repository's Settings â†’ Collaborators, invite `coleberger`. They must accept the invitation.
+
+## Roommate setup
+
+After accepting the invitation:
+
+```sh
+git clone https://github.com/thatpeople3111/shellhacks-2026.git
+cd shellhacks-2026
+npm ci
+git switch backend
+npm run dev
+```
+
+Create their own `.env.local` from `.env.example` only when needed. Local secret files are intentionally not shared through Git.
+
+## Working together
+
+You use `frontend`; your roommate uses `backend`. Keep `main` as the shared working baseline. Coordinate changes to `src/lib/types.ts` before either person changes request/response fields.
+
+Before starting work, on your own branch with a clean working tree:
+
+```sh
+git fetch origin
+git merge origin/main
+```
+
+After finishing a change, review files with `git status` and `git diff`. Stage only intended files, then commit and push your branch. Open a pull request into `main` and have the other person review it. After merging, both people fetch and merge `origin/main` again. If conflicts occur, resolve them together rather than overwriting each other's changes.
+
+## Checks
+
+```sh
+npm run lint
+npm run typecheck
+npm run build
+```
+
+The build may need internet access to download the starter's Google fonts.
+Next.js setup reference: https://nextjs.org/docs/app/getting-started/installation
