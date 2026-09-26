@@ -1,87 +1,63 @@
-# RouteWise â€” ShellHacks
+# RouteWise — ShellHacks 2026
 
-A shared Next.js App Router project for two collaborators. The UI is still the default starter; travel APIs are not implemented yet.
+One repository for both teammates: https://github.com/thatpeople3111/shellhacks-2026
 
-## Run locally
+The Next.js frontend lives at the repository root; the existing standalone API lives in `backend/`. Backend history is preserved. The frontend is still the default Next.js starter and is not wired to the API yet.
 
-Use Node.js 24 and npm. Open this folder in VS Code, then run:
+## First-time setup (both people)
 
-```sh
-npm ci
-npm run dev
-```
-
-Visit http://localhost:3000. No API keys are needed for the starter.
-When adding integrations, copy `.env.example` to `.env.local` and enter your own keys locally. Never paste keys into GitHub, chat, source code, or any `NEXT_PUBLIC_` variable. `.env.local` is ignored by Git.
-
-## Shared structure
-
-- `src/app/`: pages and layouts.
-- `src/app/api/`: future backend route handlers.
-- `src/components/`: reusable frontend components.
-- `src/lib/types.ts`: one shared frontend/backend contract (starter proposal; agree on fields together).
-- `src/data/demo.ts`: typed example request.
-- `public/`: static assets.
-
-Both sides import types with `import type { TripRequest, TripPlan } from "@/lib/types"`.
-Types disappear at runtime: API handlers must validate incoming requests.
-
-## Publish to GitHub (owner)
-
-The configured remote is `https://github.com/thatpeople3111/shellhacks-2026.git`. GitHub authentication must be completed by you. Run:
-
-```sh
-gh auth login --hostname github.com --web
-```
-
-After signing in, from this project folder, create a private repository and push the shared baseline:
-
-```sh
-git switch main
-gh repo create thatpeople3111/shellhacks-2026 --private
-git push -u origin main
-git push -u origin frontend
-git push -u origin backend
-```
-
-If a repository already exists, do not create another. Instead use its actual URL:
-
-```sh
-git remote set-url origin https://github.com/thatpeople3111/shellhacks-2026.git
-git push -u origin main
-git push -u origin frontend
-git push -u origin backend
-```
-
-If Git rejects the push because the remote already contains work, fetch and review it; do not force-push.
-In the repository's Settings â†’ Collaborators, invite `coleberger`. They must accept the invitation.
-
-## Roommate setup
-
-After accepting the invitation:
+Use Node.js 24. Clone once, then open the folder in VS Code:
 
 ```sh
 git clone https://github.com/thatpeople3111/shellhacks-2026.git
 cd shellhacks-2026
 npm ci
-git switch backend
 npm run dev
 ```
 
-Create their own `.env.local` from `.env.example` only when needed. Local secret files are intentionally not shared through Git.
+Frontend: http://localhost:3000
 
-## Working together
+In a second PowerShell terminal, start the existing backend in demo mode:
 
-You use `frontend`; your roommate uses `backend`. Keep `main` as the shared working baseline. Coordinate changes to `src/lib/types.ts` before either person changes request/response fields.
+```powershell
+cd backend
+npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile
+npx.cmd --yes pnpm@11.25.0 dev
+```
 
-Before starting work, on your own branch with a clean working tree:
+Follow `backend/README.md` for backend prerequisites and alternate start commands. Backend: http://localhost:3001; interactive docs: http://localhost:3001/docs/.
+Demo mode does not require Google or Gemini keys.
+
+## Shared files
+
+- `src/app/`: Next.js pages and layouts.
+- `src/components/`: reusable UI.
+- `src/lib/types.ts`: frontend import location, re-exporting the actual backend contract.
+- `backend/shared/contracts.ts`: single source of truth and runtime validation schemas.
+- `src/data/demo.ts`: sample input matching that contract.
+- `backend/client/routewise.ts`: typed API client.
+- `backend/docs/FRONTEND.md`: integration and rendering requirements.
+
+Use `import type { TripRequest, TripResponse } from "@/lib/types"` in frontend code.
+Agree together before changing `backend/shared/contracts.ts`. Do not create incompatible duplicate request types.
+
+## Branches and collaboration
+
+`main` is the combined baseline. Use `frontend` for frontend work and `backend` for backend work. The original `codex/routewise-backend` branch remains intact.
+
+After cloning, the frontend developer runs `git switch frontend`; coleberger runs `git switch backend`.
+Before each work session, with a clean working tree:
 
 ```sh
 git fetch origin
 git merge origin/main
 ```
 
-After finishing a change, review files with `git status` and `git diff`. Stage only intended files, then commit and push your branch. Open a pull request into `main` and have the other person review it. After merging, both people fetch and merge `origin/main` again. If conflicts occur, resolve them together rather than overwriting each other's changes.
+Review `git status` and `git diff`, stage only intended files, commit, and push your own branch. Open a pull request into `main` and ask the other person to review. After merging, both people fetch and merge `origin/main` again. Coordinate overlapping edits and never force-push over each other's work.
+
+## Keys
+
+Root `.env*` files and nested environment files are ignored; only empty `.env.example` templates are tracked. If needed, copy the root template to `.env.local` and the backend template to `backend/.env`, then fill values locally. Never commit real keys or share them in chat. Keep API_ACCESS_TOKEN and provider secrets on the server, never in NEXT_PUBLIC_ variables. No credentials are required for the starter/demo.
 
 ## Checks
 
@@ -91,5 +67,8 @@ npm run typecheck
 npm run build
 ```
 
-The build may need internet access to download the starter's Google fonts.
-Next.js setup reference: https://nextjs.org/docs/app/getting-started/installation
+Backend checks are separate; see `backend/README.md`. The frontend build downloads Google fonts and may need internet access.
+
+GitHub access: coleberger already has collaborator access. If sign-in expires, run `gh auth login --hostname github.com --web` yourself; do not paste tokens into chat.
+
+Next.js reference: https://nextjs.org/docs/app/getting-started/installation

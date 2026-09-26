@@ -1,6 +1,4 @@
-# API work
+# Next.js API routes
 
-Create `suggest-stops/route.ts` and `plan-trip/route.ts` when implementing the APIs.
-Use the shared types in `@/lib/types`, and validate incoming JSON at runtime (TypeScript types do not validate requests).
-Keep provider clients and secret environment variables in server-side code. Never import them into client components.
-No live API endpoints have been implemented by this setup.
+The existing API is in `backend/` and runs on port 3001. See `backend/docs/FRONTEND.md`.
+Use Next.js route handlers here when adding a server-side proxy. Keep API_ACCESS_TOKEN server-side, validate requests, and implement user authentication before public hosting. No proxy is implemented yet.

@@ -1,8 +1,10 @@
 import type { TripRequest } from "@/lib/types";
-
-/** Example input only; no live service calls or credentials. */
 export const demoTripRequest: TripRequest = {
-  origin: "Miami, FL",
-  destination: "Orlando, FL",
-  preferences: { categories: ["food", "coffee"], maxDetourMinutes: 20 },
+  origin: { address: "FIU Modesto A. Maidique Campus, Miami, FL" },
+  destination: { address: "Wynwood Walls, Miami, FL" },
+  budgetUsd: 15,
+  maxWalkingMinutes: 10,
+  hasCar: true,
+  preference: "balanced",
+  nearbyCategories: ["food"],
 };
