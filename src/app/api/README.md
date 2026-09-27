@@ -1,4 +1,3 @@
-# Next.js API routes
+# Active API
 
-The existing API is in `backend/` and runs on port 3001. See `backend/docs/FRONTEND.md`.
-Use Next.js route handlers here when adding a server-side proxy. Keep API_ACCESS_TOKEN server-side, validate requests, and implement user authentication before public hosting. No proxy is implemented yet.
+The browser calls the standalone backend at NEXT_PUBLIC_API_BASE_URL (default http://localhost:4000). POST /api/suggest-stops and POST /api/plan-trip are implemented in C:/Users/RayWo/routewise-backend. No Next.js API routes are required. The old backend folder serves historical documentation only.

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RouteWise · Backend docs</title>
+  <style>
+    :root{font-family:system-ui,sans-serif;color:#172b27;background:#f4f7f5;line-height:1.6}body{margin:0}main{max-width:850px;margin:64px auto;padding:0 24px}h1{font-size:clamp(2rem,6vw,3rem);line-height:1.15;margin:12px 0}h2{font-size:1.25rem}a{color:#08634d}section{background:white;border:1px solid #d9e5df;border-radius:16px;padding:24px;margin:20px 0}.label{color:#08634d;font-weight:700;letter-spacing:.12em;font-size:.8rem}code{background:#edf3ef;padding:3px 6px;border-radius:4px;overflow-wrap:anywhere}.status{border-left:5px solid #ba7d16}li{margin:10px 0}footer{color:#52675f;margin:28px 0}
+  </style>
+</head>
+<body><main>
+  <div class="label">ROUTEWISE / DEVELOPER DOCS</div>
+  <h1>Backend workspace</h1>
+  <p>Setup status and the next steps for the new RouteWise API.</p>
+  <section class="status"><h2>Docs are running · API is not implemented yet</h2><p>The previous Fastify backend was removed during the reset. This standalone documentation server preserves that reset. The frontend continues to use its mock flow.</p></section>
+  <section><h2>Local services</h2><ul>
+    <li>Frontend: <a href="http://localhost:3000">http://localhost:3000</a></li>
+    <li>Backend documentation: <a href="/docs">http://localhost:3001/docs</a></li>
+    <li>Documentation server health: <a href="/health">/health</a></li>
+  </ul><p>From the project's <code>backend</code> folder, run <code>npm run dev</code>. Node.js 22 or later is required. No dependency installation, environment file, or API keys are needed for this docs server. It always uses port 3001.</p></section>
+  <section><h2>Planned Next.js API routes</h2><p>These routes are planned for Step 6 of the setup guide. They are not available on this documentation server.</p><ul>
+    <li><code>src/app/api/suggest-stops/route.ts</code> — stop suggestions</li>
+    <li><code>src/app/api/plan-trip/route.ts</code> — trip planning</li>
+    <li><code>src/lib/gemini.ts</code> and <code>src/lib/maps.ts</code> — provider helpers</li>
+  </ul><p>Future Next.js handlers belong to the existing app. Their request and response shapes must be coordinated with the frontend before integration.</p></section>
+  <section><h2>Preserved project references</h2><p><code>backend/shared/contracts.ts</code> contains the schemas used by frontend types and validation. The files in <code>backend/client</code> and the older frontend integration documents are historical references, not current working API instructions.</p><p>Future server credentials belong in the root <code>.env.local</code>. Never place server secrets in <code>NEXT_PUBLIC_</code> variables.</p></section>
+  <footer>Documentation service only. No live Maps or Gemini requests are made.</footer>
+</main></body></html>

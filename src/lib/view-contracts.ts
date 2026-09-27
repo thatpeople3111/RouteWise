@@ -17,6 +17,7 @@ export const tripRequestSchema = z.object({
   arrivalTime: z.iso.datetime({ offset: true }).optional(),
   departureTime: z.iso.datetime({ offset: true }).optional(),
   allowTransit: z.boolean().default(true),
+  allowWalking: z.boolean().default(true),
   notes: z.string().trim().max(1000).optional(),
   hasCar: z.boolean().default(false),
   hasBike: z.boolean().default(false),
@@ -39,8 +40,8 @@ export const searchRequestSchema = z.object({ query: z.string().trim().min(2).ma
 export const stepSchema = z.object({
   mode: modeSchema,
   instruction: z.string(),
-  durationMinutes: z.number().nonnegative(),
-  distanceMeters: z.number().nonnegative(),
+  durationMinutes: z.number().nonnegative().nullable(),
+  distanceMeters: z.number().nonnegative().nullable(),
   transit: z.object({
     line: z.string(), headsign: z.string().nullable(),
     departureStop: z.string().nullable(), arrivalStop: z.string().nullable(),
@@ -49,6 +50,18 @@ export const stepSchema = z.object({
   }).nullable(),
 });
 export const routeSchema = z.object({
+  tolls: z.object({
+    status: z.enum(['estimated', 'unknown', 'not_reported']),
+    prices: z.array(z.object({ amount: z.number().nonnegative(), currency: z.string() })),
+  }).optional(),
+  parking: z.object({
+    status: z.enum(['available', 'none', 'unavailable']),
+    locations: z.array(z.object({
+      placeId: z.string(), name: z.string(), address: z.string().nullable(),
+      coordinates: coordinatesSchema, distanceMeters: z.number().nonnegative(),
+      mapsUri: z.string().url(), openNow: z.boolean().nullable(),
+    })),
+  }).optional(),
   id: z.string(), mode: modeSchema, label: z.string(),
   durationMinutes: z.number().nonnegative(), distanceMeters: z.number().nonnegative(),
   walkingMinutes: z.number().nonnegative().nullable(),

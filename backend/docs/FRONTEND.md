@@ -29,7 +29,7 @@ The client uses only `fetch` at runtime. Its contract imports are type-only. Cop
 
 For browser geolocation, obtain user permission in the UI and send coordinates. For selected search results, use the returned Google Place ID in live mode. In demo mode, IDs are fictional: send an address or coordinates instead.
 
-For arrival time, `new Date(valueFromDatetimeLocal).toISOString()` interprets the input in the browser's local timezone. Label that timezone in the UI. If the form explicitly promises Miami time to users outside Miami, use a timezone-aware date library or send an ISO timestamp with the correct Miami offset.
+For the selected arrival or departure time, `new Date(valueFromDatetimeLocal).toISOString()` interprets the input in the browser's local timezone. Send only `arrivalTime` or `departureTime`, never both, and label the timezone in the UI. If the form explicitly promises Miami time to users outside Miami, use a timezone-aware date library or send an ISO timestamp with the correct Miami offset.
 
 ## Rendering requirements
 
