@@ -1,5 +1,7 @@
 # RouteWise
 
+ShellHacks 2026 project
+
 Frontend: C:/Users/RayWo/routewise, http://localhost:3000, npm run dev.
 Active backend: C:/Users/RayWo/routewise-backend, http://localhost:4000, npm run dev.
 The old backend/ folder and port 3001 serve historical documentation only; do not use them for API requests.
