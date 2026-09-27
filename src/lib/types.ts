@@ -13,6 +13,8 @@ export type RouteOption = Route & { includesStop?: boolean; extraStopMinutes?: n
 export type SuggestedStopCategory = "food" | "coffee" | "gas" | "groceries" | "dessert" | "pharmacy";
 export type SuggestedStopTiming = "ON_ROUTE" | "DESTINATION";
 
+export type { SafeWaitCandidate, SafeWaitResponse } from "./api-types";
+
 export type SuggestedStop = {
   id: string;
   name: string;

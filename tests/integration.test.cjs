@@ -88,7 +88,7 @@ test('client reads live candidates rather than the empty legacy stops array', as
   const original = global.fetch;
   try {
     global.fetch = async (url, options) => {
-      assert.match(url, /:4000\/api\/suggest-stops$/);
+      assert.equal(url, '/api/suggest-stops');
       const request = JSON.parse(options.body);
       assert.equal(request.searchArea, 'DESTINATION');
       assert.deepEqual(request.origin, trip.origin);

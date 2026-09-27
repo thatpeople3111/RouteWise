@@ -1,5 +1,3 @@
-// Wire contract snapshot from routewise-backend/src/types/index.ts.
-// Keep synchronized when the backend contract changes. UI adapters live in api.ts.
 export interface Coordinates {
   latitude: number;
   longitude: number;
@@ -31,7 +29,6 @@ export interface TripRequest {
 }
 
 export type SuggestedStopCategory = 'food' | 'coffee' | 'gas' | 'groceries' | 'dessert' | 'pharmacy';
-export type StopTimeOfDay = 'MORNING' | 'MIDDAY' | 'EVENING' | 'LATE_NIGHT';
 
 export interface SuggestedStop {
   id: string;
@@ -54,6 +51,8 @@ export interface SuggestStopsResponse {
   rejectedCandidates?: Array<SuggestedPlaceCandidate & { rejectionReasons: string[] }>;
   warnings?: string[];
 }
+
+export type StopTimeOfDay = 'MORNING' | 'MIDDAY' | 'EVENING' | 'LATE_NIGHT';
 
 export interface FinalTripRequest extends TripRequest {
   selectedStop?: FinalTripSelectedStop;
@@ -106,7 +105,6 @@ export interface TripPlanRouteOption {
   };
   warnings: string[];
 }
-
 
 export interface TripPlan {
   id: string;
@@ -161,11 +159,10 @@ export type SuggestStopsRequest = TripRequest & {
 };
 export interface SuggestedPlaceCandidate extends PlaceCandidate {
   extraStopMinutes: number | null;
-  comparisonMode: 'DRIVE' | 'TRANSIT' | 'WALK' | 'BICYCLE' | null;
+  comparisonMode: 'DRIVE' | 'TRANSIT' | 'WALK' | null;
   routeWalkingMinutes: number | null;
   budgetStatus: 'not_requested' | 'within_limit' | 'exceeds_limit' | 'unknown';
 }
-
 export type PlacePriceLevel = 'PRICE_LEVEL_FREE' | 'PRICE_LEVEL_INEXPENSIVE' | 'PRICE_LEVEL_MODERATE'
   | 'PRICE_LEVEL_EXPENSIVE' | 'PRICE_LEVEL_VERY_EXPENSIVE';
 export type PlaceBusinessStatus = 'OPERATIONAL' | 'CLOSED_TEMPORARILY' | 'CLOSED_PERMANENTLY';
@@ -207,6 +204,7 @@ export interface PurchaseCostEstimate {
   precision: 'estimated' | 'exact';
   source: string;
 }
+
 export interface TollEstimate {
   status: 'estimated' | 'unknown' | 'not_reported';
   prices: Array<{ amount: number; currency: string }>;

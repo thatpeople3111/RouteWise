@@ -4,7 +4,7 @@ import type { RouteOption, SuggestedStop, TripInput, TripPlan } from './types';
 import type { StopPreferenceSubmission } from '../components/StopPreferences';
 import { routeSchema } from './view-contracts';
 
-export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
 const nonnegative = z.number().nonnegative();
 const category = z.enum(['food', 'coffee', 'gas', 'groceries', 'dessert', 'pharmacy']);
 const availableCategoriesSchema = z.array(category);
@@ -169,4 +169,22 @@ export function toTripPlan(payload: unknown, includesStop = false): TripPlan {
 export async function planTrip(trip: TripInput, preference: StopPreferenceSubmission | null, stop: SuggestedStop | null) {
   const response = await post('plan-trip', buildPlanRequest(trip, preference, stop), planSchema);
   return toTripPlan(response, stop !== null);
+}
+
+const safeWaitCandidateSchema = z.object({
+  placeId: z.string().min(1), name: z.string(), category: z.string(),
+  address: z.string().nullable(), coordinates: z.object({ latitude: z.number(), longitude: z.number() }).nullable(),
+  rating: z.number().nullable(), openNow: z.boolean().nullable(),
+  businessStatus: z.enum(['OPERATIONAL', 'CLOSED_TEMPORARILY', 'CLOSED_PERMANENTLY']).nullable(),
+  mapsUri: z.string().nullable(), distanceMeters: nonnegative.nullable(), walkingMinutes: nonnegative.nullable(),
+});
+const safeWaitResponseSchema = z.object({
+  dataMode: z.literal('live'),
+  best: safeWaitCandidateSchema.nullable(),
+  alternates: z.array(safeWaitCandidateSchema),
+  warnings: z.array(z.string()),
+});
+
+export async function findSafeWaitPlaces(coordinates: { latitude: number; longitude: number }) {
+  return post('safe-wait', coordinates, safeWaitResponseSchema);
 }

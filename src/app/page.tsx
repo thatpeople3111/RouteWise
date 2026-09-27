@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import LoadingScreen from "@/components/LoadingScreen";
 import RouteResults from "@/components/RouteResults";
+import StrandedMode from "@/components/StrandedMode";
 import StopPreferences, { type StopPreference, type StopPreferenceSubmission } from "@/components/StopPreferences";
 import SuggestedStopCard from "@/components/SuggestedStopCard";
 import TripForm from "@/components/TripForm";
@@ -12,7 +13,7 @@ import type { SuggestedStopCategory, StopTimeOfDay } from "@/lib/api-types";
 
 import { buildInitialSuggestPreference, planTrip, suggestStops } from "@/lib/api";
 
-type Screen = "FORM" | "CHECKING_ROUTE" | "STOP_OPTIONS" | "PLANNING" | "RESULTS";
+type Screen = "FORM" | "CHECKING_ROUTE" | "STOP_OPTIONS" | "PLANNING" | "RESULTS" | "STRANDED";
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("FORM");
@@ -159,6 +160,24 @@ export default function Home() {
             <span className="stamp-caption">A → B</span>
           </div>
         </section>
+        {screen === "FORM" && (
+          <section className="stranded-entry" aria-label="Emergency trip planning">
+            <div className="stranded-entry-copy">
+              <span className="stranded-entry-mark" aria-hidden="true">!</span>
+              <div>
+                <span className="stranded-entry-kicker">NEED HELP GETTING HOME?</span>
+                <h2>I’m stranded</h2>
+              </div>
+            </div>
+            <button className="stranded-entry-button" type="button" onClick={() => setScreen("STRANDED")}>
+              <span>Get help now</span>
+              <span aria-hidden="true">↗</span>
+            </button>
+          </section>
+        )}
+        {screen === "STRANDED" ? (
+          <StrandedMode onExit={() => setScreen("FORM")} />
+        ) : (
         <div className="planner-layout">
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className={screen === "FORM" ? "" : "hidden"}>
@@ -253,6 +272,7 @@ export default function Home() {
             />
           )}
         </div>
+        )}
         <footer className="page-footer">
           <span>ROUTEWISE</span>
           <span>Plan lightly. Go confidently.</span>
