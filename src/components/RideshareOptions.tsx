@@ -1,96 +1,82 @@
 'use client';
 
-import { buildUberRideLink, findWaymoServiceArea, WAYMO_WEB_URL } from '@/lib/rideshare';
-import type { Coordinates } from '@/lib/types';
+import RideshareCard from '@/components/RideshareCard';
+import type { RouteCardLabel } from '@/components/RouteCard';
+import type { RideshareOption, TripPlan } from '@/lib/types';
 
 type RideshareOptionsProps = {
-  pickup: Coordinates;
-  destinationLabel: string;
+  options: RideshareOption[];
+  labelsById?: Partial<Record<string, readonly RouteCardLabel[]>>;
+  variant?: 'results' | 'stranded';
 };
 
-type RideshareCard = {
-  id: string;
-  name: string;
-  mark: string;
-  note: string;
-  actionLabel: string;
-  href: string;
-};
-
-function openExternal(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer');
+/** Maps plan rankings onto option IDs so a winning rideshare can display its BEST/FASTEST labels. */
+export function rideshareLabelsById(
+  plan: Pick<TripPlan, 'best' | 'fastest' | 'cheapest'>,
+): Partial<Record<string, RouteCardLabel[]>> {
+  const labels: Partial<Record<string, RouteCardLabel[]>> = {};
+  const rankings: { id: string | null; label: RouteCardLabel }[] = [
+    { id: plan.best, label: 'BEST' },
+    { id: plan.fastest, label: 'FASTEST' },
+    { id: plan.cheapest, label: 'CHEAPEST' },
+  ];
+  for (const ranking of rankings) {
+    if (!ranking.id) continue;
+    labels[ranking.id] = [...(labels[ranking.id] ?? []), ranking.label];
+  }
+  return labels;
 }
 
-/** Builds the list of rideshare cards to show; add another provider here to extend the section. */
-function buildRideshareCards(pickup: Coordinates, destinationLabel: string): RideshareCard[] {
-  const cards: RideshareCard[] = [];
-
-  try {
-    cards.push({
-      id: 'uber',
-      name: 'Uber',
-      mark: 'U',
-      note: 'Price shown in Uber',
-      actionLabel: 'Request with Uber',
-      href: buildUberRideLink(pickup, destinationLabel),
-    });
-  } catch (failure) {
-    console.error('[RouteWise stranded mode] Could not build the Uber link.', failure);
+/**
+ * Renders the backend-supplied rideshare options for a trip. Available providers show estimated
+ * price/time plus an open-provider action; unavailable providers stay visible with the reason.
+ */
+export default function RideshareOptions({ options, labelsById = {}, variant = 'results' }: RideshareOptionsProps) {
+  if (variant === 'stranded') {
+    return (
+      <section className="rideshare-panel" aria-labelledby="rideshare-title">
+        <h2 id="rideshare-title">Rideshare Options</h2>
+        <p className="rideshare-disclaimer">
+          An additional way to get there. Fares shown here are estimates unless marked as provider prices — exact pricing, vehicle availability, and pickup time are shown by each app once you open it.
+        </p>
+        {options.length === 0 && (
+          <p className="rideshare-status" role="status">No rideshare options could be prepared right now.</p>
+        )}
+        {options.length > 0 && (
+          <div className="rideshare-list">
+            {options.map(option => (
+              <RideshareCard
+                key={option.id}
+                option={option}
+                labels={labelsById[option.id] ?? []}
+                variant="stranded"
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    );
   }
 
-  try {
-    const waymoArea = findWaymoServiceArea(pickup);
-    if (waymoArea) {
-      cards.push({
-        id: 'waymo',
-        name: 'Waymo',
-        mark: 'W',
-        note: `Waymo publishes service near ${waymoArea} — check current availability`,
-        actionLabel: 'Check Waymo availability',
-        href: WAYMO_WEB_URL,
-      });
-    }
-  } catch (failure) {
-    console.error('[RouteWise stranded mode] Could not determine Waymo availability.', failure);
-  }
-
-  return cards;
-}
-
-export default function RideshareOptions({ pickup, destinationLabel }: RideshareOptionsProps) {
-  const cards = buildRideshareCards(pickup, destinationLabel);
+  if (options.length === 0) return null;
 
   return (
-    <section className="rideshare-panel" aria-labelledby="rideshare-title">
-      <h2 id="rideshare-title">Rideshare Options</h2>
-      <p className="rideshare-disclaimer">
-        An additional way to get there. Exact pricing, vehicle availability, and pickup time are shown by each app once you open it.
+    <section className="rideshare-section" aria-labelledby="rideshare-options-heading">
+      <h2 id="rideshare-options-heading" className="text-xs font-bold uppercase tracking-wide text-[#68766f]">Rideshare options</h2>
+      <p className="rideshare-section-disclaimer">
+        Another way to make this trip. Fares are RouteWise estimates, not live provider quotes; exact pricing and pickup are confirmed in each provider&apos;s app.
       </p>
-      {cards.length === 0 && (
-        <p className="rideshare-status" role="status">No rideshare options could be prepared right now.</p>
-      )}
-      {cards.length > 0 && (
-        <div className="rideshare-list">
-          {cards.map(card => (
-            <article key={card.id} className={`rideshare-card rideshare-card-${card.id}`}>
-              <header className="rideshare-card-header">
-                <span className={`rideshare-mark rideshare-mark-${card.id}`} aria-hidden="true">{card.mark}</span>
-                <div className="min-w-0">
-                  <h3>{card.name}</h3>
-                  <p className="rideshare-price-note">{card.note}</p>
-                </div>
-              </header>
-              <button
-                type="button"
-                className={`rideshare-action rideshare-action-${card.id}`}
-                onClick={() => openExternal(card.href)}
-              >
-                {card.actionLabel}
-              </button>
-            </article>
-          ))}
-        </div>
-      )}
+      <div className="rideshare-grid">
+        {options.map(option => (
+          <RideshareCard
+            key={option.id}
+            option={option}
+            labels={labelsById[option.id] ?? []}
+            variant="results"
+          />
+        ))}
+      </div>
     </section>
   );
 }
+

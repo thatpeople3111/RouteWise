@@ -1,5 +1,5 @@
 import RouteCard, { type RouteCardLabel } from '@/components/RouteCard';
-import Map from '@/components/Map';
+import RideshareOptions, { rideshareLabelsById } from '@/components/RideshareOptions';
 import type { Location, RouteOption, SuggestedStop, TripPlan } from '@/lib/types';
 
 type RouteResultsProps = {
@@ -49,11 +49,18 @@ function routeReason(labels: readonly RouteCardLabel[], plan: TripPlan) {
 	return 'This option has the lowest known cost among the returned routes.';
 }
 
+/** Warnings that describe one specific mode now live inside that mode's tile, not in the bottom list. */
+const ROUTE_SCOPED_WARNING = /walking|transit|driv|fare|parking|detour|stop/i;
+function globalWarnings(plan: TripPlan): string[] {
+	return plan.warnings.filter(warning => !ROUTE_SCOPED_WARNING.test(warning));
+}
+
 export default function RouteResults({ plan, origin, destination, onEditTrip, selectedStop }: RouteResultsProps) {
 	const rankedRoutes = getRankedRoutes(plan);
 	const bestRoute = rankedRoutes.find(entry => entry.labels.includes('BEST'));
 	const otherRoutes = rankedRoutes.filter(entry => entry !== bestRoute);
-	const bestRouteGeometry = plan.routes.find(route => route.id === plan.best)?.encodedPolyline ?? null;
+	const rideshareLabels = rideshareLabelsById(plan);
+	const pageWarnings = globalWarnings(plan);
 
 	return (
 		<section className="route-results route-results-page grid min-w-0 gap-5" aria-labelledby="route-results-title">
@@ -77,8 +84,6 @@ export default function RouteResults({ plan, origin, destination, onEditTrip, se
 				</p>
 			)}
 
-			<Map origin={origin} destination={destination} selectedStop={selectedStop} routePolyline={bestRouteGeometry} />
-
 			{bestRoute && (
 				<section aria-labelledby="best-route-heading" className="grid gap-3">
 					<h2 id="best-route-heading" className="text-xs font-bold uppercase tracking-wide text-[#43534b]">Best match</h2>
@@ -88,6 +93,9 @@ export default function RouteResults({ plan, origin, destination, onEditTrip, se
 						summary={bestRoute.route.steps[0]?.instruction}
 						whyChosen={routeReason(bestRoute.labels, plan)}
 						selectedStop={selectedStop}
+						origin={origin}
+						destination={destination}
+						selected
 					/>
 				</section>
 			)}
@@ -104,6 +112,8 @@ export default function RouteResults({ plan, origin, destination, onEditTrip, se
 								summary={entry.route.steps[0]?.instruction}
 								whyChosen={routeReason(entry.labels, plan)}
 								selectedStop={selectedStop}
+								origin={origin}
+								destination={destination}
 							/>
 						))}
 					</div>
@@ -116,9 +126,13 @@ export default function RouteResults({ plan, origin, destination, onEditTrip, se
 				</p>
 			)}
 
-			{plan.warnings.length > 0 && (
+			{(plan.rideshares ?? []).length > 0 && (
+				<RideshareOptions options={plan.rideshares ?? []} labelsById={rideshareLabels} />
+			)}
+
+			{pageWarnings.length > 0 && (
 				<ul className="grid gap-1 rounded-sm bg-white px-4 py-3 text-xs leading-5 text-[#715522]">
-					{plan.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+					{pageWarnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
 				</ul>
 			)}
 

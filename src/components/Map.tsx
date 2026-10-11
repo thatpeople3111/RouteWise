@@ -2,13 +2,17 @@
 
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader';
 import { useEffect, useRef, useState } from 'react';
-import type { Location, SuggestedStop } from '@/lib/types';
+import type { Location, RouteOption, SuggestedStop } from '@/lib/types';
 
 type MapProps = {
 	origin: Location;
 	destination: Location;
+	/** The one selected route whose own geometry is drawn. Never a shared cross-mode route. */
+	selectedRoute?: RouteOption | null;
+	/** Show the stop marker only when the selected route actually includes it. */
 	selectedStop?: SuggestedStop | null;
-	routePolyline?: string | null;
+	/** 'compact' renders a small tile map for embedding inside a route card. */
+	variant?: 'full' | 'compact';
 };
 
 type MapPoint = {
@@ -23,6 +27,13 @@ type ResolvedMapPoint = Omit<MapPoint, 'location'> & {
 };
 
 type MapStatus = 'loading' | 'ready' | 'unavailable';
+
+const modeLabels: Record<RouteOption['mode'], string> = {
+	TRANSIT: 'Transit',
+	DRIVE: 'Driving',
+	WALK: 'Walking',
+	BICYCLE: 'Cycling',
+};
 
 let mapsLibrariesPromise: Promise<{
 	Map: typeof google.maps.Map;
@@ -87,7 +98,7 @@ async function resolvePoint(
 	}
 }
 
-export default function Map({ origin, destination, selectedStop, routePolyline = null }: MapProps) {
+export default function Map({ origin, destination, selectedRoute = null, selectedStop, variant = 'full' }: MapProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [status, setStatus] = useState<MapStatus>(
 		process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? 'loading' : 'unavailable',
@@ -95,6 +106,8 @@ export default function Map({ origin, destination, selectedStop, routePolyline =
 	const [hasRouteGeometry, setHasRouteGeometry] = useState(false);
 	const [unresolvedLocations, setUnresolvedLocations] = useState<string[]>([]);
 	const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
+	const routePolyline = selectedRoute?.encodedPolyline ?? null;
+	const stopOnRoute = selectedStop && selectedRoute?.includesStop ? selectedStop : null;
 
 	useEffect(() => {
 		let cancelled = false;
@@ -120,9 +133,9 @@ export default function Map({ origin, destination, selectedStop, routePolyline =
 				{ id: 'origin', label: 'Origin', markerLabel: 'A', location: origin },
 				{ id: 'destination', label: 'Destination', markerLabel: 'B', location: destination },
 			];
-			const stopLocation = selectedStopLocation(selectedStop);
-			if (selectedStop && stopLocation) {
-				locations.push({ id: 'stop', label: selectedStop.name, markerLabel: 'S', location: stopLocation });
+			const stopLocation = selectedStopLocation(stopOnRoute);
+			if (stopOnRoute && stopLocation) {
+				locations.push({ id: 'stop', label: stopOnRoute.name, markerLabel: 'S', location: stopLocation });
 			}
 
 			const geocoder = new Geocoder();
@@ -209,25 +222,36 @@ export default function Map({ origin, destination, selectedStop, routePolyline =
 			markers.forEach(marker => marker.setMap(null));
 			routeLine?.setMap(null);
 		};
-	}, [apiKey, origin, destination, selectedStop, routePolyline]);
+		// The selected route is the source of truth: switching routes re-runs this effect and refits the map.
+	}, [apiKey, origin, destination, stopOnRoute, routePolyline]);
 
-	const stopForFallback = selectedStop?.dataMode === 'live' && selectedStop.candidate ? selectedStop.name : null;
+	const stopForFallback = stopOnRoute?.dataMode === 'live' && stopOnRoute.candidate ? stopOnRoute.name : null;
+	const routeTitle = selectedRoute ? (selectedRoute.label ?? modeLabels[selectedRoute.mode]) : null;
+	const compact = variant === 'compact';
+	const sectionClass = compact
+		? 'route-results map-compact grid min-w-0 gap-2 p-0'
+		: 'route-results grid min-w-0 gap-3 p-4 sm:p-5';
+	const mapHeight = compact ? 'h-40 sm:h-44' : 'h-64 sm:h-80';
 
 	return (
-		<section className="route-results grid min-w-0 gap-3 p-4 sm:p-5" aria-labelledby="trip-map-title">
-			<header className="flex flex-wrap items-end justify-between gap-3">
-				<div>
-					<span className="eyebrow">TRIP LOCATIONS</span>
-					<h2 id="trip-map-title" className="font-serif text-xl font-medium text-[#192923]">Map preview</h2>
-				</div>
-				<span className="text-xs font-medium text-[#68766f]">Google Maps</span>
-			</header>
+		<section className={sectionClass} aria-labelledby={compact ? undefined : 'trip-map-title'}>
+			{!compact && (
+				<header className="flex flex-wrap items-end justify-between gap-3">
+					<div>
+						<span className="eyebrow">TRIP LOCATIONS</span>
+						<h2 id="trip-map-title" className="font-serif text-xl font-medium text-[#192923]">
+							{routeTitle ? `${routeTitle} route` : 'Map preview'}
+						</h2>
+					</div>
+					<span className="text-xs font-medium text-[#68766f]">Google Maps</span>
+				</header>
+			)}
 
-			{apiKey && <div ref={containerRef} className="h-64 w-full overflow-hidden rounded-md border border-[#dce5dc] bg-[#edf3e9] sm:h-80" aria-label="Map showing trip locations" />}
+			{apiKey && <div ref={containerRef} className={`${mapHeight} w-full overflow-hidden rounded-md border border-[#dce5dc] bg-[#edf3e9]`} aria-label={compact && routeTitle ? `Map of the ${routeTitle} route` : 'Map showing trip locations'} />}
 
-			{status === 'loading' && <p className="text-sm text-[#68766f]" role="status">Loading trip locations…</p>}
+			{status === 'loading' && <p className="text-sm text-[#68766f]" role="status">Loading map…</p>}
 			{status === 'ready' && !hasRouteGeometry && (
-				<p className="text-xs leading-5 text-[#68766f]" role="status">Route geometry was not returned by the backend, so this map shows location markers only.</p>
+				<p className="text-xs leading-5 text-[#68766f]" role="status">Route map unavailable for this option, so the map shows location markers only.</p>
 			)}
 			{status === 'ready' && unresolvedLocations.length > 0 && (
 				<p className="text-xs leading-5 text-[#68766f]" role="status">Some locations could not be placed: {unresolvedLocations.join(', ')}. Your route results are still available.</p>

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { FinalTripRequest, SuggestedPlaceCandidate, SuggestedStopCategory, SuggestStopsRequest } from './api-types';
 import type { RouteOption, SuggestedStop, TripInput, TripPlan } from './types';
 import type { StopPreferenceSubmission } from '../components/StopPreferences';
-import { routeSchema } from './view-contracts';
+import { rideshareOptionSchema, routeSchema } from './view-contracts';
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
 const nonnegative = z.number().nonnegative();
@@ -32,27 +32,86 @@ const suggestionsSchema = z.object({
 });
 const mode = z.enum(['DRIVE', 'TRANSIT', 'WALK', 'BICYCLE']);
 const constraint = z.enum(['met', 'exceeded', 'unknown', 'not_requested']);
+const parkingLocationSchema = z.object({
+  placeId: z.string(), name: z.string(), address: z.string().nullable(),
+  coordinates: z.object({ latitude: z.number(), longitude: z.number() }),
+  distanceMeters: nonnegative,
+  mapsUri: z.string().url(), openNow: z.boolean().nullable(),
+  priceAmount: nonnegative.nullable().optional(),
+  priceCurrency: z.string().optional(),
+  priceSource: z.enum(['official_config', 'unavailable']).optional(),
+  walkingMinutes: nonnegative.nullable().optional(),
+  walkingDistanceMeters: nonnegative.nullable().optional(),
+  recommended: z.boolean().optional(),
+});
+const availabilitySchema = z.object({
+  available: z.boolean(),
+  reasonCode: z.string().optional(),
+  message: z.string().optional(),
+});
+const transitAlternativeSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  durationMinutes: nonnegative,
+  distanceMeters: nonnegative,
+  walkingMinutes: nonnegative.nullable(),
+  estimatedTransportationCost: z.object({
+    amount: nonnegative, currency: z.string(),
+    source: z.enum(['google_routes_estimate', 'no_fare', 'demo', 'agency_official']),
+    sourceName: z.string().optional(),
+  }).nullable(),
+  encodedPolyline: z.string().optional(),
+  steps: z.array(z.object({
+    mode, instruction: z.string().optional(), durationMinutes: nonnegative.optional(), distanceMeters: nonnegative.optional(),
+    encodedPolyline: z.string().optional(),
+    transit: z.object({
+      headsign: z.string().optional(), line: z.string().optional(), lineShortName: z.string().optional(),
+      vehicleType: z.string().optional(), vehicleName: z.string().optional(), lineColor: z.string().optional(),
+      agencyName: z.string().optional(), stopCount: nonnegative.optional(),
+      departureStop: z.string().optional(), arrivalStop: z.string().optional(),
+    }).optional(),
+  })),
+  transfers: z.number().int().nonnegative(),
+  recommended: z.boolean().optional(),
+  availability: availabilitySchema.optional(),
+  warnings: z.array(z.string()),
+});
 const planSchema = z.object({
   id: z.string(), generatedAt: z.string(), dataMode: z.literal('live'),
   routeOptions: z.array(z.object({
     tolls: routeSchema.shape.tolls,
-    parking: routeSchema.shape.parking,
+    parking: z.object({ status: z.enum(['available', 'none', 'unavailable']), locations: z.array(parkingLocationSchema) }).optional(),
+    availability: availabilitySchema.optional(),
+    originCoordinates: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
     id: z.string(), mode, durationMinutes: nonnegative, distanceMeters: nonnegative,
     encodedPolyline: z.string().nullable().optional(),
     walkingMinutes: nonnegative.nullable(), extraStopMinutes: nonnegative.nullable(),
-    estimatedTransportationCost: z.object({ amount: nonnegative, currency: z.string(), source: z.enum(['google_routes_estimate', 'no_fare', 'demo']) }).nullable(),
+    transitAlternatives: z.array(transitAlternativeSchema).optional(),
+    estimatedTransportationCost: z.object({
+      amount: nonnegative, currency: z.string(),
+      source: z.enum(['google_routes_estimate', 'no_fare', 'demo', 'agency_official']),
+      sourceName: z.string().optional(),
+    }).nullable(),
     steps: z.array(z.object({
       mode, instruction: z.string().optional(), durationMinutes: nonnegative.optional(), distanceMeters: nonnegative.optional(),
-      transit: z.object({ headsign: z.string().optional(), line: z.string().optional(), lineShortName: z.string().optional(), departureStop: z.string().optional(), arrivalStop: z.string().optional() }).optional(),
+      encodedPolyline: z.string().optional(),
+      transit: z.object({
+        headsign: z.string().optional(), line: z.string().optional(), lineShortName: z.string().optional(),
+        vehicleType: z.string().optional(), vehicleName: z.string().optional(), lineColor: z.string().optional(),
+        agencyName: z.string().optional(), stopCount: nonnegative.optional(),
+        departureStop: z.string().optional(), arrivalStop: z.string().optional(),
+      }).optional(),
     })),
     constraints: z.object({ budget: constraint, walking: constraint, extraTime: constraint, extraBudget: constraint, eligible: z.literal(true) }),
     warnings: z.array(z.string()),
   })),
   rankings: z.object({ best: z.string().nullable(), fastest: z.string().nullable(), cheapest: z.string().nullable() }),
+  rideshares: z.array(rideshareOptionSchema).optional(),
   recommendationSource: z.enum(['gemini', 'rules']), warnings: z.array(z.string()),
 }).superRefine((plan, ctx) => {
-  const ids = new Set(plan.routeOptions.map(route => route.id));
-  if (ids.size !== plan.routeOptions.length || Object.values(plan.rankings).some(id => id !== null && !ids.has(id))) {
+  const ids = new Set([...plan.routeOptions.map(route => route.id), ...(plan.rideshares ?? []).map(option => option.id)]);
+  if (new Set(plan.routeOptions.map(route => route.id)).size !== plan.routeOptions.length
+    || Object.values(plan.rankings).some(id => id !== null && !ids.has(id))) {
     ctx.addIssue({ code: 'custom', message: 'Backend returned invalid route ranking IDs.' });
   }
 });
@@ -138,20 +197,41 @@ export function toTripPlan(payload: unknown, includesStop = false): TripPlan {
     id: route.id, mode: route.mode, label: labels[route.mode], durationMinutes: route.durationMinutes,
     distanceMeters: route.distanceMeters, walkingMinutes: route.walkingMinutes,
     includesStop, extraStopMinutes: route.extraStopMinutes,
+    availability: route.availability,
     cost: { amount: route.estimatedTransportationCost?.amount ?? null, currency: route.estimatedTransportationCost?.currency ?? 'USD',
       kind: route.estimatedTransportationCost?.source === 'no_fare' ? 'no_fare' : route.estimatedTransportationCost ? 'provider_fare' : 'unknown',
       complete: route.estimatedTransportationCost !== null && route.mode !== 'DRIVE',
       note: route.estimatedTransportationCost
-        ? (includesStop ? 'Transportation estimate; purchases and time spent at the stop are not included.' : 'Transportation estimate.')
-        : route.mode === 'TRANSIT' ? 'Google did not return a fare for this trip. Check the transit operator before travelling.'
+        ? route.estimatedTransportationCost.source === 'agency_official'
+          ? `Fare: ${route.estimatedTransportationCost.sourceName ?? 'official agency'} published base fare (may vary with transfers or passes).`
+          : (includesStop ? 'Transportation estimate; purchases and time spent at the stop are not included.' : 'Transportation estimate.')
+        : route.mode === 'TRANSIT' ? 'Fare unavailable for this trip. Check the transit operator before travelling.'
         : route.mode === 'DRIVE' ? 'Total driving cost is unavailable. Tolls are listed separately.'
         : 'Transportation price was not returned for this route.',
     },
     // Preserve directions even when Google omits a step's duration or distance.
     steps: route.steps.map(step => ({
       mode: step.mode, instruction: step.instruction ?? '', durationMinutes: step.durationMinutes ?? null, distanceMeters: step.distanceMeters ?? null,
+      encodedPolyline: step.encodedPolyline ?? null,
       transit: step.transit ? { line: step.transit.line ?? step.transit.lineShortName ?? '', headsign: step.transit.headsign ?? null,
-        departureStop: step.transit.departureStop ?? null, arrivalStop: step.transit.arrivalStop ?? null, departureTime: null, arrivalTime: null, agencies: [] } : null,
+        departureStop: step.transit.departureStop ?? null, arrivalStop: step.transit.arrivalStop ?? null, departureTime: null, arrivalTime: null,
+        vehicleType: step.transit.vehicleType ?? null, vehicleName: step.transit.vehicleName ?? null, lineColor: step.transit.lineColor ?? null,
+        agencyName: step.transit.agencyName ?? null, stopCount: step.transit.stopCount ?? null, agencies: [] } : null,
+    })),
+    transitAlternatives: route.transitAlternatives?.map(alt => ({
+      id: alt.id, title: alt.title, durationMinutes: alt.durationMinutes, distanceMeters: alt.distanceMeters,
+      walkingMinutes: alt.walkingMinutes,
+      estimatedTransportationCost: alt.estimatedTransportationCost,
+      encodedPolyline: alt.encodedPolyline,
+      steps: alt.steps.map(step => ({
+        mode: step.mode, instruction: step.instruction ?? '', durationMinutes: step.durationMinutes ?? null, distanceMeters: step.distanceMeters ?? null,
+        encodedPolyline: step.encodedPolyline ?? null,
+        transit: step.transit ? { line: step.transit.line ?? step.transit.lineShortName ?? '', headsign: step.transit.headsign ?? null,
+          departureStop: step.transit.departureStop ?? null, arrivalStop: step.transit.arrivalStop ?? null, departureTime: null, arrivalTime: null,
+          vehicleType: step.transit.vehicleType ?? null, vehicleName: step.transit.vehicleName ?? null, lineColor: step.transit.lineColor ?? null,
+          agencyName: step.transit.agencyName ?? null, stopCount: step.transit.stopCount ?? null, agencies: [] } : null,
+      })),
+      transfers: alt.transfers, recommended: alt.recommended, availability: alt.availability, warnings: alt.warnings,
     })),
     encodedPolyline: route.encodedPolyline ?? null, destination: null, mapsUrl: '', departureTime: null, arrivalTime: null, timing: 'estimated_now',
     constraints: { budget: route.constraints.budget === 'not_requested' ? 'unknown' : route.constraints.budget,
@@ -159,7 +239,7 @@ export function toTripPlan(payload: unknown, includesStop = false): TripPlan {
     warnings: route.warnings,
   }));
   return { id: plan.id, generatedAt: plan.generatedAt, dataMode: plan.dataMode, routes,
-    ...plan.rankings, recommendation: { source: plan.recommendationSource,
+    ...plan.rankings, rideshares: plan.rideshares ?? [], recommendation: { source: plan.recommendationSource,
       reason: plan.recommendationSource === 'gemini' ? 'Gemini ranked the eligible routes using the supplied travel facts and preferences.' : 'Ranked using available route times, walking estimates, and transportation costs.' },
     nearby: [], groundedGuidance: null,
     warnings: [...new Set([...plan.warnings, ...routes.flatMap(route => route.warnings)])], attribution: 'Routes and places provided by Google Maps.',

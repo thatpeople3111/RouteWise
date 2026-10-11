@@ -6,14 +6,21 @@ const ROUTES_FIELD_MASK = [
   'routes.distanceMeters',
   'routes.travelAdvisory.transitFare',
   'routes.polyline.encodedPolyline',
+  'routes.legs.startLocation.latLng',
   'routes.legs.endLocation.latLng',
   'routes.legs.steps.distanceMeters',
   'routes.legs.steps.staticDuration',
   'routes.legs.steps.travelMode',
   'routes.legs.steps.navigationInstruction.instructions',
+  'routes.legs.steps.polyline.encodedPolyline',
   'routes.legs.steps.transitDetails.headsign',
+  'routes.legs.steps.transitDetails.stopCount',
   'routes.legs.steps.transitDetails.transitLine.name',
   'routes.legs.steps.transitDetails.transitLine.nameShort',
+  'routes.legs.steps.transitDetails.transitLine.color',
+  'routes.legs.steps.transitDetails.transitLine.vehicle.type',
+  'routes.legs.steps.transitDetails.transitLine.vehicle.name',
+  'routes.legs.steps.transitDetails.transitLine.agencies',
   'routes.legs.steps.transitDetails.stopDetails.departureStop.name',
   'routes.legs.steps.transitDetails.stopDetails.arrivalStop.name',
 ].join(',');
@@ -24,6 +31,12 @@ export interface GoogleTransitDetails {
   headsign?: string;
   line?: string;
   lineShortName?: string;
+  /** Vehicle type as returned by the provider (e.g. BUS, SUBWAY, RAIL, TRAM). */
+  vehicleType?: string;
+  vehicleName?: string;
+  lineColor?: string;
+  agencyName?: string;
+  stopCount?: number;
   departureStop?: string;
   arrivalStop?: string;
 }
@@ -33,6 +46,8 @@ export interface GoogleRouteStep {
   instruction?: string;
   durationSeconds?: number;
   distanceMeters?: number;
+  /** Per-segment geometry for this step, when the provider returns it. */
+  encodedPolyline?: string;
   transit?: GoogleTransitDetails;
 }
 
@@ -47,6 +62,7 @@ export interface GoogleRouteCandidate {
     currency: string;
     source: 'google_routes_estimate' | 'no_fare';
   };
+  originCoordinates?: Coordinates;
   destinationCoordinates?: Coordinates;
   encodedPolyline?: string;
   steps: GoogleRouteStep[];
@@ -128,15 +144,29 @@ function parseStep(value: unknown, fallbackMode: GoogleTravelMode): GoogleRouteS
   if (typeof value.distanceMeters === 'number' && Number.isFinite(value.distanceMeters)) {
     step.distanceMeters = value.distanceMeters;
   }
+  if (isRecord(value.polyline) && typeof value.polyline.encodedPolyline === 'string') {
+    step.encodedPolyline = value.polyline.encodedPolyline;
+  }
 
   if (isRecord(value.transitDetails)) {
     const details = value.transitDetails;
     const transit: GoogleTransitDetails = {};
     if (typeof details.headsign === 'string') transit.headsign = details.headsign;
     if (isRecord(details.transitLine)) {
-      if (typeof details.transitLine.name === 'string') transit.line = details.transitLine.name;
-      if (typeof details.transitLine.nameShort === 'string') transit.lineShortName = details.transitLine.nameShort;
+      const line = details.transitLine;
+      if (typeof line.name === 'string') transit.line = line.name;
+      if (typeof line.nameShort === 'string') transit.lineShortName = line.nameShort;
+      if (typeof line.color === 'string') transit.lineColor = line.color;
+      if (isRecord(line.vehicle)) {
+        if (typeof line.vehicle.type === 'string') transit.vehicleType = line.vehicle.type;
+        if (isRecord(line.vehicle.name) && typeof line.vehicle.name.text === 'string') transit.vehicleName = line.vehicle.name.text;
+      }
+      if (Array.isArray(line.agencies)) {
+        const agency = line.agencies.find(a => isRecord(a) && typeof a.name === 'string');
+        if (isRecord(agency) && typeof agency.name === 'string') transit.agencyName = agency.name;
+      }
     }
+    if (typeof details.stopCount === 'number' && Number.isFinite(details.stopCount)) transit.stopCount = details.stopCount;
     if (isRecord(details.stopDetails)) {
       if (isRecord(details.stopDetails.departureStop) && typeof details.stopDetails.departureStop.name === 'string') {
         transit.departureStop = details.stopDetails.departureStop.name;
@@ -165,10 +195,19 @@ function parseRoute(value: unknown, travelMode: GoogleTravelMode, index: number)
   }
 
   const steps: GoogleRouteStep[] = [];
+  let originCoordinates: Coordinates | undefined;
   let destinationCoordinates: Coordinates | undefined;
   if (Array.isArray(value.legs)) {
     for (const leg of value.legs) {
       if (!isRecord(leg) || !Array.isArray(leg.steps)) continue;
+      if (!originCoordinates && isRecord(leg.startLocation) && isRecord(leg.startLocation.latLng)
+        && typeof leg.startLocation.latLng.latitude === 'number'
+        && typeof leg.startLocation.latLng.longitude === 'number') {
+        originCoordinates = {
+          latitude: leg.startLocation.latLng.latitude,
+          longitude: leg.startLocation.latLng.longitude,
+        };
+      }
       if (isRecord(leg.endLocation) && isRecord(leg.endLocation.latLng)
         && typeof leg.endLocation.latLng.latitude === 'number'
         && typeof leg.endLocation.latLng.longitude === 'number') {
@@ -196,6 +235,7 @@ function parseRoute(value: unknown, travelMode: GoogleTravelMode, index: number)
     ...(travelMode === 'WALK'
       ? { estimatedCost: { amount: 0, currency: 'USD', source: 'no_fare' as const } }
       : {}),
+    ...(originCoordinates ? { originCoordinates } : {}),
     ...(destinationCoordinates ? { destinationCoordinates } : {}),
     ...(isRecord(value.polyline) && typeof value.polyline.encodedPolyline === 'string'
       ? { encodedPolyline: value.polyline.encodedPolyline }
@@ -240,6 +280,7 @@ async function requestRoutes(
     requestBody.routeModifiers = { avoidTolls: true };
   }
   if (travelMode === 'TRANSIT') {
+    requestBody.computeAlternativeRoutes = true;
     if (request.departureTime) requestBody.departureTime = request.departureTime;
     if (request.arrivalTime) requestBody.arrivalTime = request.arrivalTime;
     if (request.maxWalkingMinutes !== undefined) {
@@ -294,8 +335,7 @@ async function requestRoutes(
 export async function getCandidateRoutes(
   request: TripRequest,
   options: MapsServiceOptions = {},
-): Promise<GoogleRouteCandidate[]> {
-  const travelModes = getEnabledTravelModes(request);
+): Promise<GoogleRouteCandidate[]> {  const travelModes = getEnabledTravelModes(request);
   if (travelModes.length === 0) return [];
 
   const apiKey = (options.apiKey ?? process.env.GOOGLE_MAPS_API_KEY)?.trim();
@@ -312,6 +352,46 @@ export async function getCandidateRoutes(
     travelModes.map(mode => requestRoutes(request, mode, apiKey, fetchImpl)),
   );
   return routeGroups.flat();
+}
+
+/**
+ * Fetches a single direct DRIVE route purely as a factual basis for rideshare time and price
+ * estimates, regardless of whether the user has a car. Returns null when Google has no drive route.
+ */
+export async function getDirectDriveRoute(
+  request: TripRequest,
+  options: MapsServiceOptions = {},
+): Promise<GoogleRouteCandidate | null> {
+  const apiKey = (options.apiKey ?? process.env.GOOGLE_MAPS_API_KEY)?.trim();
+  if (!apiKey) {
+    throw new GoogleRoutesApiError(
+      'MISSING_API_KEY',
+      'GOOGLE_MAPS_API_KEY is required to retrieve routes.',
+      500,
+    );
+  }
+  const routes = await requestRoutes(request, 'DRIVE', apiKey, options.fetchImpl ?? fetch);
+  return routes[0] ?? null;
+}
+
+/**
+ * Fetches a single WALK route for a pedestrian leg (e.g. parking lot → destination).
+ * Returns null when Google has no walking route for the pair.
+ */
+export async function getWalkRoute(
+  request: TripRequest,
+  options: MapsServiceOptions = {},
+): Promise<GoogleRouteCandidate | null> {
+  const apiKey = (options.apiKey ?? process.env.GOOGLE_MAPS_API_KEY)?.trim();
+  if (!apiKey) {
+    throw new GoogleRoutesApiError(
+      'MISSING_API_KEY',
+      'GOOGLE_MAPS_API_KEY is required to retrieve routes.',
+      500,
+    );
+  }
+  const routes = await requestRoutes(request, 'WALK', apiKey, options.fetchImpl ?? fetch);
+  return routes[0] ?? null;
 }
 
 export async function getCandidateRoutesViaStop(

@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getDemoSuggestStopsResponse } from '../data/demoStops';
 import { getCandidateRoutes } from '../services/maps';
-import { searchPlaces, GooglePlacesApiError } from '../services/places';
+import { dedupeClusteredPlaces, pickSpreadOnRouteStops, searchPlaces, GooglePlacesApiError } from '../services/places';
 import { recommendStopCategories } from '../services/categoryRecommendations';
 import { filterStopCandidates } from '../services/stopFiltering';
 import { readJsonBody, sendJson } from '../utils/http';
@@ -70,7 +70,7 @@ export async function handleSuggestStops(
         radiusMeters: body.radiusMeters ?? 2000,
         maxResults: body.maxResults ?? 8,
       };
-    const places = await searchPlaces(placeSearchRequest);
+    const places = dedupeClusteredPlaces(await searchPlaces(placeSearchRequest));
     const filtered = await filterStopCandidates(body, places, {
       maxExtraMinutes: body.maxExtraMinutes,
       maxExtraBudget: body.maxExtraBudget,
@@ -78,11 +78,14 @@ export async function handleSuggestStops(
     }, {
       getOriginalRoutes: async () => originalRoutes,
     });
-    const candidates = filtered.accepted
+    const sorted = filtered.accepted
       .sort((first, second) => (second.rating ?? -1) - (first.rating ?? -1)
         || (first.extraStopMinutes ?? Number.POSITIVE_INFINITY)
-          - (second.extraStopMinutes ?? Number.POSITIVE_INFINITY))
-      .slice(0, 3);
+          - (second.extraStopMinutes ?? Number.POSITIVE_INFINITY));
+    // On-route: keep a geographically spread set; destination: keep the top-rated cluster.
+    const candidates = body.searchArea === 'ON_ROUTE' && polylineRoute?.encodedPolyline
+      ? pickSpreadOnRouteStops(sorted, polylineRoute.encodedPolyline, 4)
+      : sorted.slice(0, 3);
     const warnings: string[] = [];
     if (filtered.rejected.length > 0) warnings.push(`${filtered.rejected.length} place candidates were excluded by the requested restrictions.`);
     if (candidates.some(candidate => candidate.budgetStatus === 'unknown')) {

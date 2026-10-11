@@ -1,5 +1,6 @@
 import type {
   FinalTripRequest,
+  RideshareOption,
   TripPlanRankings,
   TripPlanRouteOption,
 } from '../types/index';
@@ -10,6 +11,8 @@ const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/mo
 export interface GeminiRankingInput {
   request: FinalTripRequest;
   candidates: TripPlanRouteOption[];
+  /** Available, budget-compliant rideshare options Gemini may pick for best/fastest. */
+  rideshares?: RideshareOption[];
   maxExtraMinutes?: number;
   maxExtraBudget?: number;
 }
@@ -27,20 +30,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function validateGeminiRankings(
   value: unknown,
   candidates: TripPlanRouteOption[],
+  rideshares: RideshareOption[] = [],
 ): TripPlanRankings | null {
   if (!isRecord(value)
     || Object.keys(value).length !== 3
     || !['best', 'fastest', 'cheapest'].every(key => key in value)) return null;
 
-  const allowedIds = new Set(candidates.map(candidate => candidate.id));
+  const rideshareMinutes = new Map(
+    rideshares.flatMap(option => typeof option.estimatedTotalMinutes === 'number'
+      && Number.isFinite(option.estimatedTotalMinutes)
+      ? [[option.id, option.estimatedTotalMinutes] as const]
+      : []),
+  );
+  const allowedIds = new Set([...candidates.map(candidate => candidate.id), ...rideshareMinutes.keys()]);
   const rankingValues = [value.best, value.fastest, value.cheapest];
   if (rankingValues.some(id => id !== null && (typeof id !== 'string' || !allowedIds.has(id)))) return null;
 
-  if (candidates.length > 0 && typeof value.best !== 'string') return null;
-  const shortestDuration = Math.min(...candidates.map(candidate => candidate.durationMinutes));
-  if (typeof value.fastest !== 'string'
-    || candidates.find(candidate => candidate.id === value.fastest)?.durationMinutes !== shortestDuration) return null;
+  if (allowedIds.size > 0 && typeof value.best !== 'string') return null;
+  const durations = [
+    ...candidates.map(candidate => candidate.durationMinutes),
+    ...rideshareMinutes.values(),
+  ];
+  const shortestDuration = Math.min(...durations);
+  const fastestMinutes = candidates.find(candidate => candidate.id === value.fastest)?.durationMinutes
+    ?? rideshareMinutes.get(value.fastest as string);
+  if (typeof value.fastest !== 'string' || fastestMinutes !== shortestDuration) return null;
 
+  // Cheapest is judged on factual route costs only. Rideshare fares are estimates, so a rideshare
+  // ID is never a valid cheapest choice.
+  if (typeof value.cheapest === 'string' && rideshareMinutes.has(value.cheapest)) return null;
   const pricedRoutes = candidates.filter(candidate => candidate.estimatedTransportationCost !== null);
   const currencies = new Set(pricedRoutes.map(candidate => candidate.estimatedTransportationCost?.currency));
   if (pricedRoutes.length !== candidates.length || currencies.size !== 1) {
@@ -76,12 +94,16 @@ export async function rankRoutesWithGemini(
   input: GeminiRankingInput,
   options: GeminiRankingOptions = {},
 ): Promise<TripPlanRankings | null> {
-  if (input.candidates.length === 0) return { best: null, fastest: null, cheapest: null };
+  const rideshareOptions = input.rideshares ?? [];
+  if (input.candidates.length === 0 && rideshareOptions.length === 0) {
+    return { best: null, fastest: null, cheapest: null };
+  }
   const apiKey = (options.apiKey ?? process.env.GEMINI_API_KEY)?.trim();
   if (!apiKey) return null;
 
   const candidates = input.candidates.map(route => ({
     id: route.id,
+    kind: 'route',
     mode: route.mode,
     durationMinutes: route.durationMinutes,
     distanceMeters: route.distanceMeters,
@@ -90,6 +112,23 @@ export async function rankRoutesWithGemini(
     extraStopMinutes: route.extraStopMinutes,
     constraints: route.constraints,
   }));
+  const rideshareCandidates = rideshareOptions.map(option => ({
+    id: option.id,
+    kind: 'rideshare',
+    provider: option.provider,
+    durationMinutes: option.estimatedTotalMinutes ?? null,
+    pickupMinutes: option.estimatedPickupMinutes ?? null,
+    rideMinutes: option.estimatedRideMinutes ?? null,
+    priceEstimate: typeof option.estimatedPriceLow === 'number' && typeof option.estimatedPriceHigh === 'number'
+      ? {
+        low: option.estimatedPriceLow,
+        high: option.estimatedPriceHigh,
+        currency: option.currency ?? 'USD',
+        kind: 'routewise_estimate',
+      }
+      : null,
+    withinBudget: option.withinBudget ?? null,
+  }));
   const context = {
     trip: {
       origin: input.request.origin,
@@ -97,6 +136,7 @@ export async function rankRoutesWithGemini(
       departureTime: input.request.departureTime ?? null,
       arrivalTime: input.request.arrivalTime ?? null,
       userBudgetUsd: input.request.budgetUsd ?? null,
+      maxRideshareBudget: input.request.maxRideshareBudget ?? null,
       maxWalkingMinutes: input.request.maxWalkingMinutes ?? null,
       notes: input.request.notes ?? null,
       preference: input.request.preference ?? 'balanced',
@@ -105,12 +145,14 @@ export async function rankRoutesWithGemini(
       maxExtraBudget: input.maxExtraBudget ?? null,
     },
     candidates,
+    rideshareCandidates,
   };
   const prompt = [
     'Rank the supplied transportation route candidates for the user.',
     'The candidate list is the complete factual source of routes. Do not invent or change businesses, route IDs, durations, costs, distances, stops, or steps.',
-    'Choose one supplied candidate ID for best and the shortest-duration ID for fastest. For cheapest, return null if any transportation cost is unknown or currencies differ; otherwise choose the lowest-cost ID. You may reuse an ID for multiple labels.',
-    'Compare only supplied facts. Null cost or walking values are unknown; do not infer exact costs.',
+    'Choose one supplied candidate ID for best and the shortest-duration ID for fastest. Candidates marked kind "rideshare" may be chosen for best or fastest using their supplied total duration (pickup + ride). For cheapest, consider only route candidates: return null if any route transportation cost is unknown or currencies differ; otherwise choose the lowest-cost route ID. Rideshare prices are estimates, never exact quotes, so a rideshare ID is never a valid cheapest choice. You may reuse an ID for multiple labels.',
+    'Compare only supplied facts. Null cost or walking values are unknown; do not infer exact costs. Rideshare priceEstimate values are app estimates, not live provider quotes.',
+    'Maps and rideshare services provide the facts. Never invent Lyft or Waymo prices, pickup times, availability, or service areas.',
     'Known hard-constraint violations have already been removed by code. Unknown constraints remain unknown; do not claim they are met. Do not add candidates or override eligibility.',
     'Return only the requested structured JSON object.',
     JSON.stringify(context),
@@ -134,7 +176,10 @@ export async function rankRoutesWithGemini(
               text: {
                 // generateContent expects the enum, unlike the Interactions API.
                 mimeType: 'APPLICATION_JSON',
-                schema: responseSchema(input.candidates.map(candidate => candidate.id)),
+                schema: responseSchema([
+                  ...input.candidates.map(candidate => candidate.id),
+                  ...rideshareOptions.map(option => option.id),
+                ]),
               },
             },
             temperature: 0.1,
@@ -152,7 +197,7 @@ export async function rankRoutesWithGemini(
     if (!isRecord(firstCandidate) || !isRecord(firstCandidate.content) || !Array.isArray(firstCandidate.content.parts)) return null;
     const textPart = firstCandidate.content.parts.find(part => isRecord(part) && typeof part.text === 'string');
     if (!isRecord(textPart) || typeof textPart.text !== 'string') return null;
-    return validateGeminiRankings(JSON.parse(textPart.text) as unknown, input.candidates);
+    return validateGeminiRankings(JSON.parse(textPart.text) as unknown, input.candidates, rideshareOptions);
   } catch {
     return null;
   }

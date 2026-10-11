@@ -11,6 +11,7 @@ export const locationSchema = z.union([
 ]);
 export const modeSchema = z.enum(['TRANSIT', 'DRIVE', 'WALK', 'BICYCLE']);
 export const categorySchema = z.enum(['food', 'coffee', 'parking', 'gas', 'ev_charging', 'pharmacy']);
+export const rideshareProviderSchema = z.enum(['LYFT', 'WAYMO', 'UBER']);
 export const tripRequestSchema = z.object({
   origin: locationSchema,
   destination: locationSchema,
@@ -26,6 +27,8 @@ export const tripRequestSchema = z.object({
   avoidTolls: z.boolean().default(false),
   preference: z.enum(['balanced', 'cheapest', 'fastest', 'least_walking']).default('balanced'),
   nearbyCategories: z.array(categorySchema).max(3).default([]),
+  maxRideshareBudget: z.number().min(0).max(1000).optional(),
+  rideshareProviders: z.array(rideshareProviderSchema).max(3).optional(),
 }).strict().refine(input => !(input.arrivalTime && input.departureTime), {
   message: 'Choose either an arrival time or a departure time, not both.',
   path: ['departureTime'],
@@ -42,10 +45,17 @@ export const stepSchema = z.object({
   instruction: z.string(),
   durationMinutes: z.number().nonnegative().nullable(),
   distanceMeters: z.number().nonnegative().nullable(),
+  encodedPolyline: z.string().nullable().optional(),
   transit: z.object({
     line: z.string(), headsign: z.string().nullable(),
+    lineShortName: z.string().nullable().optional(),
     departureStop: z.string().nullable(), arrivalStop: z.string().nullable(),
     departureTime: z.string().nullable(), arrivalTime: z.string().nullable(),
+    vehicleType: z.string().nullable().optional(),
+    vehicleName: z.string().nullable().optional(),
+    lineColor: z.string().nullable().optional(),
+    agencyName: z.string().nullable().optional(),
+    stopCount: z.number().nonnegative().nullable().optional(),
     agencies: z.array(z.object({ name: z.string(), url: z.string().nullable() })),
   }).nullable(),
 });
@@ -60,7 +70,18 @@ export const routeSchema = z.object({
       placeId: z.string(), name: z.string(), address: z.string().nullable(),
       coordinates: coordinatesSchema, distanceMeters: z.number().nonnegative(),
       mapsUri: z.string().url(), openNow: z.boolean().nullable(),
+      priceAmount: z.number().nonnegative().nullable().optional(),
+      priceCurrency: z.string().optional(),
+      priceSource: z.enum(['official_config', 'unavailable']).optional(),
+      walkingMinutes: z.number().nonnegative().nullable().optional(),
+      walkingDistanceMeters: z.number().nonnegative().nullable().optional(),
+      recommended: z.boolean().optional(),
     })),
+  }).optional(),
+  availability: z.object({
+    available: z.boolean(),
+    reasonCode: z.string().optional(),
+    message: z.string().optional(),
   }).optional(),
   id: z.string(), mode: modeSchema, label: z.string(),
   durationMinutes: z.number().nonnegative(), distanceMeters: z.number().nonnegative(),
@@ -82,6 +103,26 @@ export const routeSchema = z.object({
   }),
   warnings: z.array(z.string()),
 });
+export const rideshareOptionSchema = z.object({
+  id: z.string(),
+  provider: rideshareProviderSchema,
+  available: z.boolean(),
+  unavailableReason: z.string().optional(),
+  unavailableDetail: z.string().optional(),
+  estimatedPickupMinutes: z.number().nonnegative().optional(),
+  estimatedRideMinutes: z.number().nonnegative().optional(),
+  estimatedTotalMinutes: z.number().nonnegative().optional(),
+  estimatedPriceLow: z.number().nonnegative().optional(),
+  estimatedPriceHigh: z.number().nonnegative().optional(),
+  priceSource: z.enum(['estimate', 'provider', 'unavailable']).optional(),
+  withinBudget: z.boolean().nullable().optional(),
+  currency: z.string().optional(),
+  origin: z.string(),
+  destination: z.string(),
+  vehicleType: z.string().optional(),
+  bookingUrl: z.string().optional(),
+  notes: z.array(z.string()).optional(),
+});
 export const placeSchema = z.object({
   id: z.string(), name: z.string(), address: z.string(),
   location: coordinatesSchema.nullable(), mapsUrl: z.string().nullable(),
@@ -95,6 +136,7 @@ export const tripResponseSchema = z.object({
   id: z.string(), generatedAt: z.string(), dataMode: z.enum(['demo', 'live']),
   routes: z.array(routeSchema),
   best: z.string().nullable(), cheapest: z.string().nullable(), fastest: z.string().nullable(),
+  rideshares: z.array(rideshareOptionSchema).optional(),
   recommendation: z.object({ source: z.enum(['rules', 'gemini']), reason: z.string() }),
   nearby: z.array(z.object({ category: categorySchema, places: z.array(placeSchema) })),
   groundedGuidance: z.object({ text: z.string(), groundingMetadata: z.object({}).catchall(z.unknown()) }).nullable(),
@@ -112,3 +154,19 @@ export type Route = z.infer<typeof routeSchema>;
 export type Place = z.infer<typeof placeSchema>;
 export type TripResponse = z.infer<typeof tripResponseSchema>;
 export type NearbyResponse = z.infer<typeof nearbyResponseSchema>;
+export type RideshareProvider = z.infer<typeof rideshareProviderSchema>;
+export type RideshareOption = z.infer<typeof rideshareOptionSchema>;
+export type TransitAlternative = {
+  id: string;
+  title: string;
+  durationMinutes: number;
+  distanceMeters: number;
+  walkingMinutes: number | null;
+  estimatedTransportationCost: { amount: number; currency: string; source: string; sourceName?: string } | null;
+  encodedPolyline?: string;
+  steps: Array<Route['steps'][number]>;
+  transfers: number;
+  recommended?: boolean;
+  availability?: { available: boolean; reasonCode?: string; message?: string };
+  warnings: string[];
+};

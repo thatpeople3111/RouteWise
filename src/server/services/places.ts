@@ -147,15 +147,14 @@ function sampleRoute(encodedPolyline: string, radiusMeters: number): Coordinates
   const points = decodePolyline(encodedPolyline);
   const segmentLengths = points.slice(1).map((point, index) => haversineMeters(points[index], point));
   const routeLength = segmentLengths.reduce((sum, length) => sum + length, 0);
-  const sampleCount = Math.min(
-    MAX_ROUTE_SEARCH_POINTS,
-    Math.max(2, Math.ceil(routeLength / (radiusMeters * 1.5))),
+  // Distribute searches along the route instead of clustering near the origin. Skip the first
+  // ~12% so early results are genuinely "into" the trip, then sample early/mid/late zones.
+  const zoneFractions = routeLength < 4000
+    ? [0.35, 0.65] // short trips: two broad zones
+    : [0.18, 0.32, 0.48, 0.62]; // longer trips: early + mid spread
+  return zoneFractions.map(fraction =>
+    pointAtDistance(points, segmentLengths, Math.min(routeLength * fraction, routeLength - 1)),
   );
-
-  return Array.from({ length: sampleCount }, (_, index) => {
-    const distance = routeLength * index / (sampleCount - 1);
-    return pointAtDistance(points, segmentLengths, distance);
-  });
 }
 
 function optionalEnum<T extends string>(value: unknown, values: readonly T[]): T | null {
@@ -305,9 +304,86 @@ export async function searchPlaces(
   const uniquePlaces = new Map<string, PlaceCandidate>();
   for (const place of resultGroups.flat()) {
     if (!uniquePlaces.has(place.placeId)) uniquePlaces.set(place.placeId, place);
-    if (uniquePlaces.size >= maxResults) break;
   }
   return [...uniquePlaces.values()];
+}
+
+/** Removes candidates that are effectively the same spot (same name within ~60 m). */
+export function dedupeClusteredPlaces(places: PlaceCandidate[], minSeparationMeters = 60): PlaceCandidate[] {
+  const kept: PlaceCandidate[] = [];
+  for (const place of places) {
+    if (!place.coordinates) { kept.push(place); continue; }
+    const coordinates = place.coordinates;
+    const duplicate = kept.some(existing => {
+      if (!existing.coordinates) return false;
+      const sameName = existing.name.trim().toLowerCase() === place.name.trim().toLowerCase();
+      return sameName && haversineMeters(existing.coordinates, coordinates) < minSeparationMeters;
+    });
+    if (!duplicate) kept.push(place);
+  }
+  return kept;
+}
+
+/**
+ * Picks a geographically spread set for ON_ROUTE results: prefer candidates from distinct
+ * route zones (early/mid) before filling remaining slots by quality.
+ */
+export function pickSpreadOnRouteStops<T extends { coordinates: Coordinates | null }>(
+  candidates: T[],
+  routePolyline: string,
+  count: number,
+): T[] {
+  if (candidates.length <= count) return candidates;
+  let routePoints: Coordinates[];
+  try {
+    routePoints = decodePolyline(routePolyline);
+  } catch {
+    return candidates.slice(0, count);
+  }
+  const segmentLengths = routePoints.slice(1).map((point, index) => haversineMeters(routePoints[index], point));
+  const routeLength = segmentLengths.reduce((sum, length) => sum + length, 0);
+  if (routeLength === 0) return candidates.slice(0, count);
+
+  // Assign each candidate a zone = fraction along the route (0 = origin, 1 = destination),
+  // interpolating within the nearest segment for a smoother progress estimate.
+  function zoneOf(place: T): number {
+    const coordinates = place.coordinates;
+    if (!coordinates) return 0.5;
+    let bestSegment = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < routePoints.length - 1; index += 1) {
+      const a = routePoints[index];
+      const b = routePoints[index + 1];
+      // distance to segment midpoint is a stable, cheap proxy for nearest point.
+      const mid = { latitude: (a.latitude + b.latitude) / 2, longitude: (a.longitude + b.longitude) / 2 };
+      const distance = haversineMeters(coordinates, mid);
+      if (distance < bestDistance) { bestDistance = distance; bestSegment = index; }
+    }
+    const traversed = segmentLengths.slice(0, bestSegment).reduce((sum, length) => sum + length, 0)
+      + segmentLengths[bestSegment] / 2;
+    return traversed / routeLength;
+  }
+
+  const scored = candidates.map(place => ({ place, zone: zoneOf(place) }));
+  const early = scored.filter(entry => entry.zone < 0.4);
+  const mid = scored.filter(entry => entry.zone >= 0.4);
+  const picked: T[] = [];
+  const takeFrom = (list: typeof scored, needed: number) => {
+    for (const entry of list) {
+      if (picked.length >= count || needed <= 0) break;
+      if (picked.includes(entry.place)) continue;
+      picked.push(entry.place);
+      needed -= 1;
+    }
+  };
+  // Interleave: up to two early + two mid, then fill the rest by zone-spread order.
+  takeFrom(early, Math.min(2, Math.ceil(count / 2)));
+  takeFrom(mid, Math.min(2, count - picked.length));
+  // Fill remaining slots preferring whichever zone is under-represented.
+  const remaining = scored.filter(entry => !picked.includes(entry.place))
+    .sort((a, b) => a.zone - b.zone);
+  takeFrom(remaining, count - picked.length);
+  return picked.slice(0, count);
 }
 
 const SAFE_WAIT_PLACE_TYPES = ['lodging', 'cafe', 'convenience_store', 'transit_station', 'restaurant'] as const;

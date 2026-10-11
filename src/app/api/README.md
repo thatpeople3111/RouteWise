@@ -1,3 +1,1 @@
-# Active API
-
-The browser calls the standalone backend at NEXT_PUBLIC_API_BASE_URL (default http://localhost:4000). POST /api/suggest-stops and POST /api/plan-trip are implemented in C:/Users/RayWo/routewise-backend. No Next.js API routes are required. The old backend folder serves historical documentation only.
+For local development with the standalone backend, set NEXT_PUBLIC_API_BASE_URL=http://localhost:4000 in .env.local. The active backend lives in C:/Users/RayWo/routewise-backend and serves /api/suggest-stops, /api/plan-trip, /api/safe-wait, and /health. If NEXT_PUBLIC_API_BASE_URL is unset or empty, the frontend uses the bundled Pages API handlers in src/pages/api/[endpoint].ts (see DEPLOYMENT.md). The old backend/ folder and port 3001 are historical documentation only.

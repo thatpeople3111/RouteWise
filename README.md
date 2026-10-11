@@ -8,14 +8,14 @@ The old backend/ folder and port 3001 serve historical documentation only; do no
 
 ## Integration
 
-Set NEXT_PUBLIC_API_BASE_URL=http://localhost:4000 in .env.local if overriding the default, then restart the frontend. CORS_ORIGINS on the backend defaults to http://localhost:3000.
+Set NEXT_PUBLIC_API_BASE_URL=http://localhost:4000 in .env.local to use the standalone backend for local development, then restart the frontend. If unset, the frontend uses its bundled same-origin /api handlers (see DEPLOYMENT.md). CORS_ORIGINS on the backend defaults to http://localhost:3000.
 The backend loads ../routewise/.env.local followed by its own .env; existing process environment values take precedence. Backend .env values override the first file. GOOGLE_MAPS_API_KEY powers Routes and Places; GEMINI_API_KEY powers ranking. Never put provider secrets in NEXT_PUBLIC_ variables.
 
 The form validates locations, one schedule timestamp, transport choices and limits. Choosing a stop sends category and searchArea to POST /api/suggest-stops. The UI displays candidates, not the legacy stops field. Selected candidates are retained intact for POST /api/plan-trip. Skipping omits selectedStop and sends skip:true. Extra limits are sent only with a selected stop.
 
 src/lib/api-types.ts mirrors the active backend wire contract. src/lib/api.ts validates responses and maps them into the existing UI view models in view-contracts.ts. Route durations already include the detour and must not be added twice. Missing cost/rating/detour information remains unknown. Gemini failures retain rules-based ranking and are disclosed in results.
 
-No mock flow is enabled. Demo fixtures remain for isolated UI work only. Map.tsx is an empty placeholder; an interactive map has not been implemented.
+No mock flow is enabled. Demo fixtures remain for isolated UI work only. Map.tsx loads the Google Maps JavaScript API, resolves trip locations, and displays backend-supplied route geometry. The browser Maps key must allow http://localhost:3000/*.
 
 ## Checks
 

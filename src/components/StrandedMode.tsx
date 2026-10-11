@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import RouteResults from '@/components/RouteResults';
-import RideshareOptions from '@/components/RideshareOptions';
+import RideshareOptions, { rideshareLabelsById } from '@/components/RideshareOptions';
 import SafeWaitPanel from '@/components/SafeWaitPanel';
 import { findSafeWaitPlaces, planTrip } from '@/lib/api';
 import { tripRequestSchema } from '@/lib/validation';
@@ -208,7 +208,7 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
             destination={{ address: destination.trim() }}
             onEditTrip={() => setPlan(null)}
           />
-          <RideshareOptions pickup={location.coordinates} destinationLabel={destination.trim()} />
+          <RideshareOptions options={plan.rideshares ?? []} labelsById={rideshareLabelsById(plan)} variant="stranded" />
         </section>
 
         <div className="stranded-divider" role="separator" aria-hidden="true"><span>OR</span></div>

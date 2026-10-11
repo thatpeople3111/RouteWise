@@ -5,6 +5,7 @@ import type {
   PlaceBusinessStatus,
   PlacePriceLevel,
   PurchaseCostEstimate,
+  RideshareProvider,
   SuggestedStop,
   SuggestedStopCategory,
   SuggestStopsRequest,
@@ -21,10 +22,11 @@ const tripCategories: readonly TripCategory[] = [
   'food', 'coffee', 'parking', 'gas', 'ev_charging', 'pharmacy',
 ];
 const tripPreferences = ['balanced', 'cheapest', 'fastest', 'least_walking'] as const;
+const rideshareProviders: readonly RideshareProvider[] = ['LYFT', 'WAYMO', 'UBER'];
 const tripRequestKeys = new Set([
   'origin', 'destination', 'arrivalTime', 'departureTime', 'allowTransit', 'allowWalking', 'notes',
   'hasCar', 'hasBike', 'budgetUsd', 'maxWalkingMinutes', 'avoidTolls', 'preference',
-  'nearbyCategories',
+  'nearbyCategories', 'maxRideshareBudget', 'rideshareProviders',
 ]);
 const finalTripRequestKeys = new Set([...tripRequestKeys, 'selectedStop', 'skip', 'maxExtraMinutes', 'maxExtraBudget']);
 const suggestStopsRequestKeys = new Set([
@@ -101,6 +103,15 @@ export function isTripRequest(value: unknown): value is TripRequest {
     && (!Array.isArray(value.nearbyCategories)
       || value.nearbyCategories.length > 3
       || value.nearbyCategories.some(category => !tripCategories.includes(category as TripCategory)))) {
+    return false;
+  }
+  if ('maxRideshareBudget' in value
+    && (typeof value.maxRideshareBudget !== 'number' || !Number.isFinite(value.maxRideshareBudget)
+      || value.maxRideshareBudget < 0 || value.maxRideshareBudget > 1000)) return false;
+  if ('rideshareProviders' in value
+    && (!Array.isArray(value.rideshareProviders)
+      || value.rideshareProviders.length > rideshareProviders.length
+      || value.rideshareProviders.some(provider => !rideshareProviders.includes(provider as RideshareProvider)))) {
     return false;
   }
 

@@ -1,5 +1,6 @@
 import type { Coordinates, DestinationParking, ParkingLocation } from '../types/index';
 import type { PlacesServiceOptions } from './places';
+import { lookupParkingPrice } from './parkingPricing';
 
 const radiusMeters = 1000;
 
@@ -63,6 +64,12 @@ export async function findDestinationParking(
       });
     }
     locations.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    for (const location of locations) {
+      const price = lookupParkingPrice(location.name);
+      location.priceAmount = price.priceAvailable ? price.amount ?? null : null;
+      location.priceCurrency = 'USD';
+      location.priceSource = price.source === 'official_config' ? 'official_config' : 'unavailable';
+    }
     return { status: locations.length ? 'available' : 'none', locations };
   } catch {
     return { status: 'unavailable', locations: [] };

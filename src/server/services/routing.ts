@@ -6,6 +6,8 @@ export interface CandidateRouteStep {
   instruction?: string;
   durationMinutes?: number;
   distanceMeters?: number;
+  /** Per-segment geometry for this step, when the provider returns it. */
+  encodedPolyline?: string;
   transit?: GoogleRouteStep['transit'];
 }
 
@@ -39,6 +41,7 @@ function normalizeStep(step: GoogleRouteStep): CandidateRouteStep {
     normalized.durationMinutes = secondsToMinutes(step.durationSeconds);
   }
   if (step.distanceMeters !== undefined) normalized.distanceMeters = step.distanceMeters;
+  if (step.encodedPolyline !== undefined) normalized.encodedPolyline = step.encodedPolyline;
   if (step.transit !== undefined) normalized.transit = step.transit;
   return normalized;
 }

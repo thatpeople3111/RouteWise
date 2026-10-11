@@ -11,6 +11,8 @@ export type Location =
 export type TripCategory = 'food' | 'coffee' | 'parking' | 'gas' | 'ev_charging' | 'pharmacy';
 export type TripPreference = 'balanced' | 'cheapest' | 'fastest' | 'least_walking';
 
+export type RideshareProvider = 'LYFT' | 'WAYMO' | 'UBER';
+
 export interface TripRequest {
   origin: Location;
   destination: Location;
@@ -26,6 +28,10 @@ export interface TripRequest {
   avoidTolls?: boolean;
   preference?: TripPreference;
   nearbyCategories?: TripCategory[];
+  /** Optional rideshare-only budget in USD. Kept separate from budgetUsd (overall trip) and maxExtraBudget (optional stop). */
+  maxRideshareBudget?: number;
+  /** Providers the user wants to see. Defaults to all supported providers when omitted. */
+  rideshareProviders?: RideshareProvider[];
 }
 
 export type SuggestedStopCategory = 'food' | 'coffee' | 'gas' | 'groceries' | 'dessert' | 'pharmacy';
@@ -64,18 +70,78 @@ export interface FinalTripRequest extends TripRequest {
 export type TripPlanRank = 'BEST' | 'FASTEST' | 'CHEAPEST';
 export type RouteConstraintState = 'met' | 'exceeded' | 'unknown' | 'not_requested';
 
+/** Distinguishes an internally calculated estimate from a live provider quote. */
+export type RidesharePriceSource = 'estimate' | 'provider' | 'unavailable';
+
+export interface RideshareOption {
+  id: string;
+  provider: RideshareProvider;
+  available: boolean;
+  unavailableReason?: string;
+  unavailableDetail?: string;
+  estimatedPickupMinutes?: number;
+  estimatedRideMinutes?: number;
+  estimatedTotalMinutes?: number;
+  estimatedPriceLow?: number;
+  estimatedPriceHigh?: number;
+  priceSource?: RidesharePriceSource;
+  /** null when no rideshare budget was set or the price is unknown. */
+  withinBudget?: boolean | null;
+  currency?: string;
+  origin: string;
+  destination: string;
+  vehicleType?: string;
+  bookingUrl?: string;
+  notes?: string[];
+}
+
 export interface TripPlanStep {
   mode: 'DRIVE' | 'TRANSIT' | 'WALK' | 'BICYCLE';
   instruction?: string;
   durationMinutes?: number;
   distanceMeters?: number;
+  /** Per-segment geometry for this step, when the provider returns it. */
+  encodedPolyline?: string;
   transit?: {
     headsign?: string;
     line?: string;
     lineShortName?: string;
+    /** Vehicle type as returned by the provider (e.g. Bus, Subway, Rail). */
+    vehicleType?: string;
+    vehicleName?: string;
+    lineColor?: string;
+    agencyName?: string;
+    stopCount?: number;
     departureStop?: string;
     arrivalStop?: string;
   };
+}
+
+/** One distinct public-transit journey alternative (which may itself contain transfers). */
+export interface TransitAlternative {
+  id: string;
+  /** Short label derived from the actual vehicle types/lines, e.g. "Bus" or "Bus + Rail". */
+  title: string;
+  durationMinutes: number;
+  distanceMeters: number;
+  walkingMinutes: number | null;
+  estimatedTransportationCost: {
+    amount: number;
+    currency: string;
+    source: 'google_routes_estimate' | 'no_fare' | 'demo' | 'agency_official';
+    sourceName?: string;
+  } | null;
+  encodedPolyline?: string;
+  steps: TripPlanStep[];
+  /** Number of transfers between transit vehicles (initial boarding excluded). */
+  transfers: number;
+  recommended?: boolean;
+  availability?: {
+    available: boolean;
+    reasonCode?: string;
+    message?: string;
+  };
+  warnings: string[];
 }
 
 export interface TripPlanRouteOption {
@@ -90,12 +156,24 @@ export interface TripPlanRouteOption {
   estimatedTransportationCost: {
     amount: number;
     currency: string;
-    source: 'google_routes_estimate' | 'no_fare' | 'demo';
+    source: 'google_routes_estimate' | 'no_fare' | 'demo' | 'agency_official';
+    /** Human-readable fare source, e.g. an official transit agency. */
+    sourceName?: string;
   } | null;
+  /** Resolved origin coordinates, when the route service returned them. */
+  originCoordinates?: Coordinates;
   steps: TripPlanStep[];
+  /** Alternative transit journeys, when more than one transit route is returned. */
+  transitAlternatives?: TransitAlternative[];
   origin: Location;
   destination: Location;
   extraStopMinutes: number | null;
+  /** Structured reason this route was excluded from ranking; absent when eligible. */
+  availability?: {
+    available: boolean;
+    reasonCode?: 'WALKING_LIMIT_EXCEEDED' | 'BUDGET_EXCEEDED' | 'EXTRA_TIME_EXCEEDED' | 'EXTRA_BUDGET_EXCEEDED' | 'WALKING_UNVERIFIABLE' | 'NO_ROUTE';
+    message?: string;
+  };
   constraints: {
     budget: RouteConstraintState;
     walking: RouteConstraintState;
@@ -114,11 +192,13 @@ export interface TripPlan {
   destination: Location;
   selectedStop: FinalTripSelectedStop | null;
   routeOptions: TripPlanRouteOption[];
+  /** Rankings reference route option IDs, or a rideshare option ID when a rideshare wins a time-based label. */
   rankings: {
     best: string | null;
     fastest: string | null;
     cheapest: string | null;
   };
+  rideshares?: RideshareOption[];
   recommendationSource: 'gemini' | 'rules';
   warnings: string[];
 }
@@ -218,6 +298,15 @@ export interface ParkingLocation {
   distanceMeters: number;
   mapsUri: string;
   openNow: boolean | null;
+  /** App-maintained official-published parking price, null when unknown. Never invented. */
+  priceAmount?: number | null;
+  priceCurrency?: string;
+  priceSource?: 'official_config' | 'unavailable';
+  /** Pedestrian route time from this lot to the destination, when routing is available. */
+  walkingMinutes?: number | null;
+  walkingDistanceMeters?: number | null;
+  /** The lot RouteWise recommends for the driving total. */
+  recommended?: boolean;
 }
 
 export interface DestinationParking {

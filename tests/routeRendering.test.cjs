@@ -38,9 +38,11 @@ test('renders every route, tolls, fares, destination parking, and Gemini source'
   const plan = toTripPlan(payload);
   const html = renderToStaticMarkup(React.createElement(RouteResults, { plan, origin: { address: 'Origin' }, destination: { address: 'Destination' }, onEditTrip() {} }));
   assert.equal((html.match(/<article/g) ?? []).length, 3);
-  for (const text of ['Ranked with Gemini', '$4.50', '$2.25', '$0.00', 'Price unavailable', 'Destination Garage', '120', 'Turn right onto Main Street']) {
+  // Driving shows its estimated total (tolls included), transit its fare, walking its free fare.
+  for (const text of ['Ranked with Gemini', '$4.50', '$2.25', '$0.00', 'Destination Garage', 'Turn right onto Main Street', 'Estimated total']) {
     assert.ok(html.includes(text), `Missing ${text}`);
   }
+  assert.ok(html.includes('m from destination'), 'parking distance shown');
   assert.equal(plan.routes[0].cost.amount, null);
   assert.equal(plan.routes[0].steps[0].durationMinutes, null);
 });

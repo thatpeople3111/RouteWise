@@ -2,21 +2,34 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
+import ConstraintsScreen from "@/components/ConstraintsScreen";
+import HomeScreen from "@/components/HomeScreen";
 import LoadingScreen from "@/components/LoadingScreen";
 import RouteResults from "@/components/RouteResults";
 import StrandedMode from "@/components/StrandedMode";
 import StopPreferences, { type StopPreference, type StopPreferenceSubmission } from "@/components/StopPreferences";
 import SuggestedStopCard from "@/components/SuggestedStopCard";
-import TripForm from "@/components/TripForm";
+import TripDetailsScreen from "@/components/TripDetailsScreen";
+import { DEFAULT_TRIP_DRAFT, draftToTripRequest, type TripDraft } from "@/lib/tripDraft";
+import { tripRequestSchema } from "@/lib/validation";
 import type { SuggestedStop, TripInput, TripPlan } from "@/lib/types";
 import type { SuggestedStopCategory, StopTimeOfDay } from "@/lib/api-types";
 
 import { buildInitialSuggestPreference, planTrip, suggestStops } from "@/lib/api";
 
-type Screen = "FORM" | "CHECKING_ROUTE" | "STOP_OPTIONS" | "PLANNING" | "RESULTS" | "STRANDED";
+type Screen =
+  | "HOME"
+  | "TRIP_DETAILS"
+  | "CONSTRAINTS"
+  | "CHECKING_ROUTE"
+  | "STOP_OPTIONS"
+  | "PLANNING"
+  | "RESULTS"
+  | "STRANDED";
 
 export default function Home() {
-  const [screen, setScreen] = useState<Screen>("FORM");
+  const [screen, setScreen] = useState<Screen>("HOME");
+  const [draft, setDraft] = useState<TripDraft>(DEFAULT_TRIP_DRAFT);
   const [trip, setTrip] = useState<TripInput | null>(null);
   const [stopPreference, setStopPreference] = useState<StopPreference | null>(null);
   const [submittedStopPreference, setSubmittedStopPreference] = useState<StopPreferenceSubmission | null>(null);
@@ -35,6 +48,8 @@ export default function Home() {
 
   async function handleTripSubmit(submittedTrip: TripInput) {
     const id = ++requestId.current;
+    // Do NOT fetch or render stop businesses yet. Only seed the stop preferences and move to the
+    // stop-preference screen; real suggestions load only after the user presses "Find stops".
     const initialPreference = buildInitialSuggestPreference(submittedTrip);
     setTrip(submittedTrip);
     setStopPreference({
@@ -43,7 +58,7 @@ export default function Home() {
       maxExtraTimeMinutes: initialPreference.maxExtraMinutes ?? null,
       maxExtraSpendingUsd: initialPreference.maxExtraBudget ?? null,
     });
-    setSubmittedStopPreference(initialPreference);
+    setSubmittedStopPreference(null);
     setSelectedStop(null);
     setAddedStop(null);
     setSuggestions([]);
@@ -56,18 +71,16 @@ export default function Home() {
     setBusy(true);
     setScreen('CHECKING_ROUTE');
     try {
-      const result = await suggestStops(submittedTrip, initialPreference);
+      // Lightweight category/availability context only; no business candidates requested here.
+      const result = await suggestStops(submittedTrip, { skip: false, category: initialPreference.category, timing: initialPreference.timing, maxExtraMinutes: initialPreference.maxExtraMinutes, maxExtraBudget: initialPreference.maxExtraBudget });
       if (id !== requestId.current) return;
-      setSuggestions(result.stops);
       setAvailableCategories(result.availableCategories);
       setRecommendedCategories(result.recommendedCategories);
       setSuggestionTimeOfDay(result.timeOfDay);
-      setWarnings(result.warnings);
       setScreen('STOP_OPTIONS');
     } catch (failure) {
       if (id !== requestId.current) return;
-      console.error('[RouteWise] Initial stop suggestion request failed.', failure);
-      setSubmittedStopPreference(null);
+      console.error('[RouteWise] Stop-preference setup failed.', failure);
       setError(failure instanceof Error ? failure.message : 'Could not check this trip. Please try again.');
       setScreen('STOP_OPTIONS');
     } finally {
@@ -137,6 +150,39 @@ export default function Home() {
   function handleAddStop(stop: SuggestedStop) { void startPlanning(stop); }
   const matchingStops = suggestions;
 
+  function updateDraft(patch: Partial<TripDraft>) {
+    setDraft(current => ({ ...current, ...patch }));
+  }
+
+  function startOver() {
+    setDraft(DEFAULT_TRIP_DRAFT);
+    setTrip(null);
+    setStopPreference(null);
+    setSubmittedStopPreference(null);
+    setSelectedStop(null);
+    setAddedStop(null);
+    setSuggestions([]);
+    setPlan(null);
+    setError('');
+    setWarnings([]);
+    setScreen('HOME');
+  }
+
+  function handleLetsGo() {
+    setError('');
+    try {
+      const request = draftToTripRequest(draft);
+      const validated = tripRequestSchema.safeParse(request);
+      if (!validated.success) {
+        setError(validated.error.issues[0].message);
+        return;
+      }
+      void handleTripSubmit(validated.data);
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : 'Could not prepare your trip. Check the details and try again.');
+    }
+  }
+
   return (
     <main className="app-shell">
       <div className="page-container">
@@ -160,29 +206,30 @@ export default function Home() {
             <span className="stamp-caption">A → B</span>
           </div>
         </section>
-        {screen === "FORM" && (
-          <section className="stranded-entry" aria-label="Emergency trip planning">
-            <div className="stranded-entry-copy">
-              <span className="stranded-entry-mark" aria-hidden="true">!</span>
-              <div>
-                <span className="stranded-entry-kicker">NEED HELP GETTING HOME?</span>
-                <h2>I’m stranded</h2>
-              </div>
-            </div>
-            <button className="stranded-entry-button" type="button" onClick={() => setScreen("STRANDED")}>
-              <span>Get help now</span>
-              <span aria-hidden="true">↗</span>
-            </button>
-          </section>
+        {screen === "HOME" && (
+          <HomeScreen onGetStarted={() => setScreen("TRIP_DETAILS")} onStranded={() => setScreen("STRANDED")} />
         )}
         {screen === "STRANDED" ? (
-          <StrandedMode onExit={() => setScreen("FORM")} />
+          <StrandedMode onExit={() => setScreen("HOME")} />
         ) : (
         <div className="planner-layout">
           {error && <p className="form-error" role="alert">{error}</p>}
-          <div className={screen === "FORM" ? "" : "hidden"}>
-            <TripForm onSubmitTrip={handleTripSubmit} />
-          </div>
+          {screen === "TRIP_DETAILS" && (
+            <TripDetailsScreen
+              draft={draft}
+              onChange={updateDraft}
+              onBack={() => setScreen("HOME")}
+              onContinue={() => setScreen("CONSTRAINTS")}
+            />
+          )}
+          {screen === "CONSTRAINTS" && (
+            <ConstraintsScreen
+              draft={draft}
+              onChange={updateDraft}
+              onBack={() => setScreen("TRIP_DETAILS")}
+              onStart={handleLetsGo}
+            />
+          )}
 
           {screen === "CHECKING_ROUTE" && (
             <LoadingScreen
@@ -198,17 +245,18 @@ export default function Home() {
           {screen === "STOP_OPTIONS" && (
             <fieldset disabled={busy} className="grid gap-4 min-w-0 border-0 p-0">
               <legend className="sr-only">Optional stops</legend>
-              {busy && <p role="status">Finding real stops along your trip…</p>}
               {warnings.map(warning => <p key={warning} role="status">{warning}</p>)}
-              <button type="button" className="location-button" onClick={() => { setError(''); setScreen('FORM'); }}>Edit trip</button>
-              <StopPreferences
-                value={stopPreference}
-                availableCategories={availableCategories}
-                recommendedCategories={recommendedCategories}
-                timeOfDay={suggestionTimeOfDay}
-                onChange={handleStopPreferenceChange}
-                onSubmit={handleStopPreferenceSubmit}
-              />
+              <button type="button" className="location-button" onClick={() => { setError(''); setScreen('TRIP_DETAILS'); }}>Edit trip</button>
+              {!submittedStopPreference && (
+                <StopPreferences
+                  value={stopPreference}
+                  availableCategories={availableCategories}
+                  recommendedCategories={recommendedCategories}
+                  timeOfDay={suggestionTimeOfDay}
+                  onChange={handleStopPreferenceChange}
+                  onSubmit={handleStopPreferenceSubmit}
+                />
+              )}
               {submittedStopPreference && !submittedStopPreference.skip && (
                 <section className="route-results p-5 sm:p-7" aria-labelledby="stop-results-title" aria-live="polite">
                   <div className="results-header">
@@ -221,14 +269,25 @@ export default function Home() {
                   <p className="mt-2 text-xs leading-5 text-[#68766f]">
                     Real places and route estimates from Google Maps. Purchase costs may be unavailable.
                   </p>
-                  {busy ? <p role="status">Searching…</p> : matchingStops.length > 0 ? (
+                  {busy ? (
+                    <div className="mt-4" role="status">
+                      <LoadingScreen
+                        title="Finding good stops…"
+                        messages={[
+                          "Checking route position",
+                          "Finding nearby places",
+                          "Comparing detour time",
+                          "Applying your limits",
+                        ]}
+                      />
+                    </div>
+                  ) : matchingStops.length > 0 ? (
                     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {matchingStops.map(stop => (
                         <SuggestedStopCard
                           key={stop.id}
                           stop={stop}
-                          selected={selectedStop?.id === stop.id}
-                          onSelect={setSelectedStop}
+                          busy={busy}
                           onAddToTrip={handleAddStop}
                         />
                       ))}
@@ -239,11 +298,10 @@ export default function Home() {
                     </p>
                   )}
                   <div className="form-footer mt-5 border-t border-[#dce5dc] pt-4">
-                    <span />
-                    <button className="submit-button" type="button" onClick={() => void startPlanning()}>
-                      <span>Continue to planning</span>
-                      <span aria-hidden="true">↗</span>
+                    <button type="button" className="location-button" onClick={() => { setSubmittedStopPreference(null); setSuggestions([]); setError(''); }}>
+                      Change preferences
                     </button>
+                    <span />
                   </div>
                 </section>
               )}
@@ -254,22 +312,27 @@ export default function Home() {
             <LoadingScreen
               title="Building your trip..."
               messages={[
-                "Checking your destination",
-                "Looking at transportation options",
-                "Finding useful stops",
+                "Checking transportation options",
                 "Comparing time and cost",
+                "Checking rideshare availability",
+                "Checking Waymo service area",
+                "Finding useful stops",
+                "Choosing the best options",
               ]}
             />
           )}
 
           {screen === "RESULTS" && trip && plan && (
-            <RouteResults
-              plan={plan}
-              origin={trip.origin}
-              destination={trip.destination}
-              selectedStop={addedStop}
-              onEditTrip={() => setScreen("FORM")}
-            />
+            <div className="grid gap-4 min-w-0">
+              <RouteResults
+                plan={plan}
+                origin={trip.origin}
+                destination={trip.destination}
+                selectedStop={addedStop}
+                onEditTrip={() => setScreen("TRIP_DETAILS")}
+              />
+              <button type="button" className="location-button justify-self-start" onClick={startOver}>Start over</button>
+            </div>
           )}
         </div>
         )}

@@ -1455,6 +1455,129 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
 .form-controls:disabled { opacity: 0.82; }
 .field select:disabled { opacity: 0.55; }
 
+/* Rideshare options — main results (dark navy theme) */
+.rideshare-section { display: grid; gap: 12px; }
+.rideshare-section-disclaimer { margin: 0; font-size: 12px; line-height: 1.5; color: #9badc5; }
+.rideshare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+
+.rideshare-option-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #263750;
+  border-radius: 8px;
+  background: #111d30;
+}
+.rideshare-option-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rideshare-option-mark {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 15px;
+}
+.rideshare-option-lyft .rideshare-option-mark { background: rgba(255, 0, 191, 0.16); color: #ff7ae0; border: 1px solid rgba(255, 0, 191, 0.5); }
+.rideshare-option-waymo .rideshare-option-mark { background: rgba(91, 140, 255, 0.16); color: #9cc5ff; border: 1px solid rgba(91, 140, 255, 0.5); }
+.rideshare-option-uber .rideshare-option-mark { background: rgba(231, 238, 251, 0.1); color: #e7eefb; border: 1px solid rgba(231, 238, 251, 0.4); }
+.rideshare-option-name { margin: 0; font-size: 15px; font-weight: 700; color: #e7eefb; }
+.rideshare-option-vehicle { margin: 2px 0 0; font-size: 11px; color: #9badc5; }
+
+.rideshare-option-price-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rideshare-option-price { margin: 0; font-size: 20px; font-weight: 700; color: #e7eefb; font-variant-numeric: tabular-nums; }
+.rideshare-option-price-caption { margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #7bb3ff; }
+
+.rideshare-option-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 10px 0; border-top: 1px solid #263750; border-bottom: 1px solid #263750; }
+.rideshare-option-stats dt { font-size: 10px; font-weight: 500; color: #9badc5; }
+.rideshare-option-stats dd { margin: 2px 0 0; font-size: 13px; font-weight: 600; color: #e7eefb; }
+
+.rideshare-option-overbudget { margin: 0; padding: 6px 10px; border-radius: 4px; background: #302a20; color: #f0cf8b; font-size: 11px; font-weight: 600; }
+
+.rideshare-option-notes { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.rideshare-option-notes li { font-size: 11px; line-height: 1.5; color: #9badc5; }
+
+.rideshare-option-action {
+  justify-self: start;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid #3d6fd6;
+  border-radius: 6px;
+  background: #2868cb;
+  color: #f6f9ff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 140ms ease, transform 140ms ease;
+}
+.rideshare-option-action:hover { background: #347be4; transform: translateY(-1px); }
+.rideshare-option-action:focus-visible { outline: 2px solid #71adff; outline-offset: 2px; }
+
+/* Unavailable cards stay visible and readable, but are clearly not selectable. */
+.rideshare-option-card.is-unavailable { border-style: dashed; background: rgba(17, 29, 48, 0.55); }
+.rideshare-option-card.is-unavailable .rideshare-option-mark { opacity: 0.55; }
+.rideshare-option-unavailable { margin: 0; font-size: 13px; font-weight: 700; color: #dce7f8; }
+.rideshare-option-unavailable-detail { margin: 0; font-size: 12px; line-height: 1.5; color: #9badc5; }
+
+/* Rideshare options — stranded mode (red-accent dark panel) */
+.rideshare-option-stranded { background: #1b1b26; border-color: #45323a; }
+.rideshare-option-stranded .rideshare-option-name { color: #fff1f1; }
+.rideshare-option-stranded .rideshare-option-vehicle { color: #c0aeb3; }
+.rideshare-option-stranded .rideshare-option-price { color: #fff1f1; }
+.rideshare-option-stranded .rideshare-option-price-caption { color: #ff9fa1; }
+.rideshare-option-stranded .rideshare-option-stats { border-color: #352d39; }
+.rideshare-option-stranded .rideshare-option-stats dt { color: #c0aeb3; }
+.rideshare-option-stranded .rideshare-option-stats dd { color: #fff1f1; }
+.rideshare-option-stranded .rideshare-option-notes li { color: #c0aeb3; }
+.rideshare-option-stranded .rideshare-option-unavailable { color: #ffc9ca; }
+.rideshare-option-stranded .rideshare-option-unavailable-detail { color: #c0aeb3; }
+.rideshare-option-stranded.is-unavailable { background: #1b1b26; }
+.rideshare-option-stranded .rideshare-option-action { border-color: #ff7276; background: #a92634; box-shadow: 0 0 16px rgba(255, 65, 76, 0.25); }
+.rideshare-option-stranded .rideshare-option-action:hover { background: #c4303d; }
+.rideshare-option-stranded .rideshare-option-overbudget { background: rgba(255, 190, 92, 0.14); color: #ffce8a; }
+
+/* Trip form rideshare provider toggles */
+.rideshare-provider-toggles { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.rideshare-provider-toggles input[type="checkbox"] { accent-color: #64a3ff; width: 16px; height: 16px; }
+
+/* Per-route "View route" selection button (dark theme) */
+.view-route-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #2b3d58;
+  border-radius: 6px;
+  background: #0b1422;
+  color: #9cc5ff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.view-route-button:hover { border-color: #5799ff; background: #111d30; }
+.view-route-button:focus-visible { outline: 2px solid #71adff; outline-offset: 2px; }
+.view-route-button[aria-pressed="true"] {
+  border-color: #5799ff;
+  background: #1d56a3;
+  color: #f3f8ff;
+  box-shadow: 0 0 0 1px rgba(100, 164, 255, 0.4);
+}
+.route-results article.ring-2 { box-shadow: 0 0 0 1px rgba(86, 153, 255, 0.5), 0 0 24px rgba(54, 127, 244, 0.18); }
+
+@media (prefers-reduced-motion: reduce) {
+  .view-route-button { transition: none; }
+}
+
+@media (max-width: 540px) {
+  .rideshare-grid { grid-template-columns: 1fr; }
+  .rideshare-option-action { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rideshare-option-action { transition: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
@@ -1544,4 +1667,205 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
 }
 @media (prefers-reduced-motion: reduce) {
   .planning-orb-halo, .planning-orb-core, .planning-orb-glint { animation: none; }
+}
+
+/* Home / welcome screen */
+.home-screen {
+  display: grid;
+  gap: 18px;
+  padding: 30px 24px;
+  border: 1px solid rgba(106, 145, 199, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 25, 41, 0.96);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+.home-hero { display: grid; gap: 10px; }
+.home-title {
+  margin: 0;
+  font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+  line-height: 1.05;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.home-copy { margin: 0; max-width: 44ch; color: var(--muted); font-size: 15px; line-height: 1.6; }
+.home-stranded {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 91, 93, 0.42);
+  border-left: 4px solid #ff555b;
+  border-radius: 8px;
+  background: #1a1216;
+  color: #ffe9ea;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.home-stranded:hover { background: #241318; border-color: #ff7276; }
+.home-stranded:focus-visible { outline: 2px solid #ff8b8d; outline-offset: 2px; }
+.home-stranded-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 85, 91, 0.18);
+  color: #ff9fa1;
+  font-weight: 800;
+  font-size: 20px;
+}
+.home-stranded-text { display: grid; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.home-stranded-kicker { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #ff9fa1; }
+.home-stranded-label { font-size: 17px; font-weight: 700; color: #ffe9ea; }
+.home-get-started { justify-content: center; min-height: 54px; font-size: 15px; }
+
+/* Step progress indicator */
+.step-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.step-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2b3d58;
+}
+.step-dot.is-active { background: #5799ff; box-shadow: 0 0 8px rgba(86, 153, 255, 0.6); }
+.step-sep { color: #45597a; }
+
+/* Back button on setup screens */
+.back-button { min-width: 92px; }
+
+@media (max-width: 540px) {
+  .home-screen { padding: 22px 16px; gap: 14px; }
+  .home-stranded { flex-wrap: wrap; }
+}
+
+/* Transit tile: alternative tabs + transfer timeline */
+.transit-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.transit-tab {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid #2b3d58;
+  border-radius: 8px;
+  background: #0b1422;
+  color: #d5e1f3;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.transit-tab:hover { border-color: #5799ff; background: #111d30; }
+.transit-tab:focus-visible { outline: 2px solid #71adff; outline-offset: 2px; }
+.transit-tab.is-selected {
+  border-color: #5799ff;
+  background: #1d56a3;
+  color: #f3f8ff;
+  box-shadow: 0 0 0 1px rgba(100, 164, 255, 0.4);
+}
+.transit-tab.is-unavailable { opacity: 0.7; }
+.transit-tab-title { font-size: 13px; font-weight: 700; }
+.transit-tab-sub { font-size: 11px; color: #9badc5; }
+.transit-tab.is-selected .transit-tab-sub { color: #c4dcff; }
+.transit-tab-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7bb3ff;
+}
+.transit-tab.is-selected .transit-tab-badge { color: #cfe4ff; }
+
+.transit-option-unavailable {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-left: 2px solid #e2ad42;
+  border-radius: 4px;
+  background: #302a20;
+  color: #f0cf8b;
+  font-size: 12px;
+}
+
+.transit-option-summary {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #9badc5;
+}
+
+.transit-timeline {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0;
+  border-left: 2px solid #263750;
+  padding-left: 14px;
+}
+.transit-timeline-step {
+  position: relative;
+  padding: 6px 0 6px 6px;
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+  color: #dce7f8;
+}
+.transit-timeline-step::before {
+  content: '';
+  position: absolute;
+  left: -19px;
+  top: 11px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #45597a;
+}
+.transit-timeline-step.is-transit::before { background: #5799ff; }
+.transit-timeline-step.is-walk::before { background: #68a6ff; }
+.transit-step-label { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.transit-stop { color: #9badc5; font-size: 12px; }
+.transit-step-time { font-size: 11px; color: #7bb3ff; }
+.transit-transfer {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #142c4c;
+  color: #8bbaff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.transit-warnings {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  list-style: none;
+  border-left: 2px solid #e2ad42;
+  border-radius: 4px;
+  background: #302a20;
+  color: #f0cf8b;
+  font-size: 11px;
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 540px) {
+  .transit-tab-bar { flex-direction: column; }
+  .transit-tab { width: 100%; }
 }
