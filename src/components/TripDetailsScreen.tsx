@@ -1,8 +1,10 @@
 'use client';
 
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Coordinates } from '@/lib/types';
 import type { TripDraft } from '@/lib/tripDraft';
+import type { SelectedTripPlace } from '@/lib/tripDraft';
+import { resolveLocation } from '@/lib/api';
 
 type TripDetailsScreenProps = {
 	draft: TripDraft;
@@ -20,8 +22,13 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 	const [locationMessage, setLocationMessage] = useState('');
 	const [gettingLocation, setGettingLocation] = useState(false);
 	const [error, setError] = useState('');
+	const [resolving, setResolving] = useState(false);
+	const [choices, setChoices] = useState<{ field: 'origin' | 'destination'; places: SelectedTripPlace[] } | null>(null);
+	const resolutionId = useRef(0);
+	useEffect(() => () => { resolutionId.current += 1; locationRequest.current += 1; }, []);
 
 	function useCurrentLocation() {
+		resolutionId.current += 1; setResolving(false); setChoices(null);
 		if (!navigator.geolocation) {
 			setLocationMessage('Location is not supported by this browser. Enter a starting point below.');
 			return;
@@ -34,6 +41,7 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 				if (requestId !== locationRequest.current) return;
 				const current: Coordinates = { latitude: coords.latitude, longitude: coords.longitude };
 				onChange({
+					originPlace: null,
 					originCoordinates: current,
 					originText: `Current location (${current.latitude.toFixed(4)}, ${current.longitude.toFixed(4)})`,
 				});
@@ -55,9 +63,9 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 		);
 	}
 
-	function handleSubmit(event: FormEvent<HTMLFormElement>) {
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		if (gettingLocation) return;
+		if (gettingLocation || resolving) return;
 		setError('');
 
 		const hasOrigin = draft.originCoordinates !== null || draft.originText.trim().length >= 2;
@@ -67,7 +75,28 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 		if (!Number.isFinite(date.getTime())) { setError('Choose a departure or arrival time.'); return; }
 		if (!draft.departureNow && date.getTime() <= Date.now()) { setError('Choose a time in the future.'); return; }
 		if (date.getTime() > Date.now() + 7 * 86400000) { setError('Choose a time within the next seven days.'); return; }
-		onContinue();
+		const id = ++resolutionId.current;
+		setResolving(true);
+		try {
+			let originPlace = draft.originPlace;
+			let bias = originPlace?.coordinates ?? draft.originCoordinates ?? undefined;
+			if (!originPlace && !draft.originCoordinates) {
+				const result = await resolveLocation(draft.originText);
+				if (id !== resolutionId.current) return;
+				if (!result.place) { setChoices({ field: 'origin', places: result.alternatives }); setError('Choose your starting place, or make the query more specific.'); return; }
+				originPlace = result.place; bias = result.place.coordinates;
+				onChange({ originPlace });
+			}
+			if (!draft.destinationPlace) {
+				const result = await resolveLocation(draft.destinationText, bias);
+				if (id !== resolutionId.current) return;
+				if (!result.place) { setChoices({ field: 'destination', places: result.alternatives }); setError('Choose your destination, or make the query more specific.'); return; }
+				onChange({ destinationPlace: result.place });
+			}
+			setChoices(null);
+			onContinue();
+		} catch (failure) { if (id === resolutionId.current) setError(failure instanceof Error ? failure.message : 'Could not resolve your places. Try again.'); }
+		finally { if (id === resolutionId.current) setResolving(false); }
 	}
 
 	return (
@@ -100,9 +129,10 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 										autoComplete="street-address"
 										value={draft.originText}
 										onChange={event => {
+											resolutionId.current += 1; setResolving(false); setChoices(null);
 											locationRequest.current += 1;
 											setGettingLocation(false);
-											onChange({ originText: event.target.value, originCoordinates: null });
+											onChange({ originText: event.target.value, originCoordinates: null, originPlace: null });
 											setLocationMessage('');
 										}}
 										placeholder={draft.originCoordinates ? 'Current location selected' : 'Enter a starting place'}
@@ -113,6 +143,7 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 									</button>
 								</span>
 								<span className="field-hint" role="status">{locationMessage || 'Your location stays in this trip request.'}</span>
+								{draft.originPlace && <span className="field-hint">{draft.originPlace.name} · {draft.originPlace.formattedAddress}</span>}
 							</label>
 							<label className="field">
 								<span className="field-label">Where do you want to go?</span>
@@ -122,13 +153,19 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 									maxLength={300}
 									autoComplete="off"
 									value={draft.destinationText}
-									onChange={event => onChange({ destinationText: event.target.value })}
+									onChange={event => { resolutionId.current += 1; setResolving(false); setChoices(null); onChange({ destinationText: event.target.value, destinationPlace: null }); }}
 									placeholder="Place, neighborhood, or landmark"
 									required
 								/>
-								<span className="field-hint">A name is enough; no street address needed.</span>
+								<span className="field-hint">{draft.destinationPlace ? `${draft.destinationPlace.name} · ${draft.destinationPlace.formattedAddress}` : 'Add a nearby landmark or address for a more precise match.'}</span>
 							</label>
 						</div>
+						{choices && choices.places.length > 0 && <div className="grid gap-2" aria-label={`Choose ${choices.field}`}>
+							<p className="field-hint">Which place did you mean?</p>
+							{choices.places.map(place => <button key={place.placeId} type="button" className="location-button" onClick={() => { onChange(choices.field === 'origin' ? { originPlace: place } : { destinationPlace: place }); setChoices(null); setError(''); }}>
+								{place.name} · {place.formattedAddress}
+							</button>)}
+						</div>}
 					</section>
 
 					<section className="form-section schedule-section" aria-labelledby="schedule-title">
@@ -168,8 +205,8 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 
 					<div className="form-footer">
 						<button type="button" className="location-button back-button" onClick={onBack}>Back</button>
-						<button className="submit-button" type="submit" disabled={gettingLocation}>
-							<span>Continue</span>
+						<button className="submit-button" type="submit" disabled={gettingLocation || resolving}>
+							<span>{resolving ? 'Finding your places…' : 'Continue'}</span>
 							<span aria-hidden="true">↗</span>
 						</button>
 					</div>

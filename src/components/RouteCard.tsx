@@ -1,10 +1,14 @@
 import type { Location, RouteOption, SuggestedStop } from '@/lib/types';
+import { formatDuration } from '@/lib/formatDuration';
 import Map from '@/components/Map';
+import FarePrice from './FarePrice';
 import TransitTabs from '@/components/TransitTabs';
 
 export type RouteCardLabel = 'BEST' | 'FASTEST' | 'CHEAPEST';
 
 type RouteCardProps = {
+	journeyCost?: { totalUsd: number | null; knownSubtotalUsd: number; note: string };
+	variant?: 'results' | 'stranded';
 	route: RouteOption;
 	labels?: readonly RouteCardLabel[];
 	summary?: string;
@@ -41,6 +45,8 @@ function badgeStyle(label: RouteCardLabel) {
 }
 
 export default function RouteCard({
+	journeyCost,
+	variant = 'results',
 	route,
 	labels = [],
 	summary,
@@ -91,11 +97,11 @@ export default function RouteCard({
 
 	return (
 		<article
-			className={`min-w-0 overflow-hidden rounded-md border bg-white transition-shadow ${unavailable ? 'border-[#e2ad42] opacity-95' : selected ? 'border-[#24634d] ring-2 ring-[#24634d]/40 shadow-[0_10px_28px_rgba(36,99,77,0.13)]' : best ? 'border-[#24634d] shadow-[0_10px_28px_rgba(36,99,77,0.13)]' : 'border-[#dce5dc] shadow-sm'}`}
+			className={`min-w-0 overflow-hidden rounded-md border ${variant === 'stranded' ? 'stranded-route-card' : 'bg-white'} transition-shadow ${unavailable ? 'border-[#e2ad42] opacity-95' : selected ? 'border-[#24634d] ring-2 ring-[#24634d]/40 shadow-[0_10px_28px_rgba(36,99,77,0.13)]' : best ? 'border-[#24634d] shadow-[0_10px_28px_rgba(36,99,77,0.13)]' : 'border-[#dce5dc] shadow-sm'}`}
 			aria-labelledby={titleId}
 		>
 			<div className={`h-1 ${unavailable ? 'bg-[#e2ad42]' : selected || best ? 'bg-[#24634d]' : 'bg-[#dce5dc]'}`} aria-hidden="true" />
-			<div className="p-5 sm:p-6">
+			<div className={`p-5 sm:p-6 ${variant === 'stranded' ? 'stranded-route-content' : ''}`}>
 				<div className="flex flex-wrap items-center justify-between gap-3">
 					{labels.length > 0 ? (
 						<div className="flex flex-wrap gap-2" aria-label="Route distinctions">
@@ -134,7 +140,7 @@ export default function RouteCard({
 						{summary && <p className="mt-1 text-sm leading-5 text-[#68766f]">{summary}</p>}
 					</div>
 					<div className="shrink-0 sm:text-right">
-						<p className="text-3xl font-semibold leading-none tabular-nums text-[#192923]">{Math.round(totalMinutes)} <span className="text-sm font-medium text-[#68766f]">min</span></p>
+						<p className="text-3xl font-semibold leading-none tabular-nums text-[#192923]">{formatDuration(totalMinutes)}</p>
 						<p className="mt-1 text-[10px] text-[#87928a]">Estimated total travel time</p>
 						{selectedStop && <p className="mt-1 text-xs text-[#68766f]">{route.includesStop ? 'Includes travel via your stop; time spent there is extra.' : 'Includes estimated stop time.'}</p>}
 					</div>
@@ -142,9 +148,9 @@ export default function RouteCard({
 
 				{/* Per-route compact map: this option's own geometry only. Transit shows tabs + per-option map. */}
 				{route.mode === 'TRANSIT' && route.transitAlternatives && route.transitAlternatives.length > 0 ? (
-					<TransitTabs route={route} origin={origin!} destination={destination!} />
+					<TransitTabs route={route} origin={origin!} destination={destination!} variant={variant} />
 				) : origin && destination ? (
-					<div className="mt-4">
+					<div className={`mt-4 ${variant === 'stranded' ? 'stranded-route-map' : ''}`}>
 						<Map origin={origin} destination={destination} selectedRoute={route} selectedStop={selectedStop} variant="compact" />
 					</div>
 				) : null}
@@ -154,9 +160,11 @@ export default function RouteCard({
 						<dt className="text-[10px] font-medium text-[#87928a]">{route.mode === 'TRANSIT' ? 'Fare' : 'Transportation cost'}</dt>
 						<dd className="mt-1 break-words text-sm font-semibold text-[#192923]">
 							{route.mode === 'TRANSIT'
-								? transitFareKnown
+								? route.fare ? <FarePrice fare={route.fare} unavailableLabel="Fare unavailable" /> : transitFareKnown
 									? `Fare: ${formatMoney(route.cost.amount!, route.cost.currency)}`
 									: 'Fare unavailable'
+								: route.mode === 'DRIVE' && journeyCost
+									? journeyCost.totalUsd === null ? journeyCost.knownSubtotalUsd === 0 ? 'Total price unavailable' : `Known subtotal: ${formatMoney(journeyCost.knownSubtotalUsd, 'USD')} · total unavailable` : `Estimated total: ${formatMoney(journeyCost.totalUsd, 'USD')}`
 								: route.mode === 'DRIVE'
 									? drivingEstimatedTotal !== null
 										? `Estimated total: ${formatMoney(drivingEstimatedTotal, route.cost.currency)}`
@@ -175,7 +183,7 @@ export default function RouteCard({
 						)}
 						{route.mode === 'DRIVE' && drivingEstimatedTotal !== null && (
 							<dd className="mt-1 text-[10px] leading-4 text-[#87928a]">
-								{drivingTotalIsPartial
+								{journeyCost ? 'See the journey cost breakdown below.' : drivingTotalIsPartial
 									? 'Tolls and recommended parking; drive cost not returned.'
 									: 'Includes tolls and recommended parking.'}
 							</dd>
@@ -195,7 +203,7 @@ export default function RouteCard({
 					<div className="min-w-0">
 						<dt className="text-[10px] font-medium text-[#87928a]">Walking</dt>
 						<dd className="mt-1 text-sm font-semibold text-[#192923]">
-							{route.walkingMinutes === null ? 'Unavailable' : `${Math.round(route.walkingMinutes)} min`}
+							{route.walkingMinutes === null ? 'Unavailable' : `${formatDuration(route.walkingMinutes)}`}
 						</dd>
 					</div>
 					{selectedStop && (
@@ -204,14 +212,14 @@ export default function RouteCard({
 							<dd className="mt-1 break-words text-sm font-semibold text-[#192923]">
 								{stopCost === undefined ? selectedStop.name : `${selectedStop.name} · ${formatMoney(stopCost, 'USD')}`}
 							</dd>
-							<p className="mt-0.5 text-xs text-[#68766f]">{stopMinutes === null ? 'Extra travel time unknown' : `+${Math.round(stopMinutes)} min · estimated detour`}</p>
+							<p className="mt-0.5 text-xs text-[#68766f]">{stopMinutes === null ? 'Extra travel time unknown' : `+${formatDuration(stopMinutes)} · estimated detour`}</p>
 						</div>
 					)}
 				</dl>
 
 				{route.cost.note && route.mode !== 'TRANSIT' && <p className="mt-3 text-xs leading-5 text-[#68766f]">{route.cost.note}</p>}
 				{route.mode === 'DRIVE' && (
-					<p className="mt-1 text-xs leading-5 text-[#68766f]">Tolls and the recommended parking are included in the estimated total. Fuel is not included; toll charges may vary by payment method.</p>
+					<p className="mt-1 text-xs leading-5 text-[#68766f]">{journeyCost?.note ?? 'Tolls and the recommended parking are included in the estimated total. Fuel is not included; toll charges may vary by payment method.'}</p>
 				)}
 
 				{route.mode === 'DRIVE' && (
@@ -229,14 +237,14 @@ export default function RouteCard({
 													<span className="rounded-sm bg-[#edf3e9] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#194b3a]">Recommended</span>
 												)}
 											</div>
-											<p className="mt-1">
+											{place.fare ? <FarePrice fare={place.fare} /> : <p className="mt-1">
 												{place.priceSource === 'official_config' && place.priceAmount !== null && place.priceAmount !== undefined
 													? `Parking: ${formatMoney(place.priceAmount, place.priceCurrency ?? 'USD')}`
 													: 'Parking price unavailable'}
-											</p>
+											</p>}
 											<p>
 												{place.walkingMinutes !== null && place.walkingMinutes !== undefined
-													? `${Math.round(place.walkingMinutes)} min walk`
+													? `${formatDuration(place.walkingMinutes)} walk`
 													: 'Walk time unavailable'}
 												{place.walkingDistanceMeters !== null && place.walkingDistanceMeters !== undefined
 													? ` · ${(place.walkingDistanceMeters / 1609.344).toFixed(1)} mi from destination`

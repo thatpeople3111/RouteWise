@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { handlePlanTrip } from '../../server/routes/planTrip';
 import { handleSafeWait } from '../../server/routes/safeWait';
 import { handleSuggestStops } from '../../server/routes/suggestStops';
+import { handleResolveLocation } from '../../server/routes/resolveLocation';
 
 export const config = { api: { bodyParser: false }, maxDuration: 60 };
 
@@ -17,6 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   try {
     switch (endpoint) {
+      case 'resolve-location': return await handleResolveLocation(req, res);
       case 'plan-trip': return await handlePlanTrip(req, res);
       case 'suggest-stops': return await handleSuggestStops(req, res);
       case 'safe-wait': return await handleSafeWait(req, res);

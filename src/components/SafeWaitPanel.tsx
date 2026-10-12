@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import { formatDuration } from '@/lib/formatDuration';
 import type { SafeWaitCandidate } from '@/lib/types';
 
 type SafeWaitPanelProps = {
@@ -5,8 +7,8 @@ type SafeWaitPanelProps = {
   best: SafeWaitCandidate | null;
   alternates: SafeWaitCandidate[];
   errorMessage?: string;
-  busyPlaceId: string | null;
-  routeError: string;
+  selectedPlaceId: string | null;
+  routeDetails?: ReactNode;
   onRouteHere: (place: SafeWaitCandidate) => void;
   onRetry: () => void;
 };
@@ -16,10 +18,11 @@ function distanceLabel(place: SafeWaitCandidate) {
   return place.distanceMeters >= 1000 ? `${(place.distanceMeters / 1000).toFixed(1)} km away` : `${place.distanceMeters} m away`;
 }
 
-function SafeWaitCard({ place, prominent, busy, onRouteHere }: {
+function SafeWaitCard({ place, prominent, selected, routeDetails, onRouteHere }: {
   place: SafeWaitCandidate;
   prominent: boolean;
-  busy: boolean;
+  selected: boolean;
+  routeDetails?: ReactNode;
   onRouteHere: (place: SafeWaitCandidate) => void;
 }) {
   return (
@@ -36,26 +39,27 @@ function SafeWaitCard({ place, prominent, busy, onRouteHere }: {
       </header>
       <dl className="safe-wait-facts">
         {distanceLabel(place) && <div><dt>Distance</dt><dd>{distanceLabel(place)}</dd></div>}
-        {place.walkingMinutes !== null && <div><dt>Walk</dt><dd>~{place.walkingMinutes} min</dd></div>}
+        {place.walkingMinutes !== null && <div><dt>Walk</dt><dd>~{formatDuration(place.walkingMinutes)}</dd></div>}
         <div><dt>Rating</dt><dd>{place.rating === null ? 'Unavailable' : place.rating.toFixed(1)}</dd></div>
       </dl>
       {place.address && <p className="safe-wait-address">{place.address}</p>}
       <button
         type="button"
         className="safe-wait-route-button"
-        disabled={busy}
+        aria-expanded={selected}
         onClick={() => onRouteHere(place)}
       >
-        {busy ? 'Routing…' : 'Route Me Here'}
+        {selected ? 'Hide route' : 'Route me here'}
       </button>
+      {selected && routeDetails}
     </article>
   );
 }
 
-export default function SafeWaitPanel({ status, best, alternates, errorMessage, busyPlaceId, routeError, onRouteHere, onRetry }: SafeWaitPanelProps) {
+export default function SafeWaitPanel({ status, best, alternates, errorMessage, selectedPlaceId, routeDetails, onRouteHere, onRetry }: SafeWaitPanelProps) {
   return (
     <section className="safe-wait-panel" aria-labelledby="safe-wait-title">
-      <h2 id="safe-wait-title">Safe Place to Wait Nearby</h2>
+      <h2 id="safe-wait-title">Safe Places to Wait</h2>
       <p className="safe-wait-disclaimer">
         These are recommended public places to wait, based on distance, ratings, and open hours &mdash; not a guarantee of personal safety.
       </p>
@@ -80,14 +84,13 @@ export default function SafeWaitPanel({ status, best, alternates, errorMessage, 
 
       {status === 'ready' && best && (
         <div className="safe-wait-list">
-          <SafeWaitCard place={best} prominent busy={busyPlaceId === best.placeId} onRouteHere={onRouteHere} />
-          {alternates.map(place => (
-            <SafeWaitCard key={place.placeId} place={place} prominent={false} busy={busyPlaceId === place.placeId} onRouteHere={onRouteHere} />
+          <SafeWaitCard place={best} prominent selected={selectedPlaceId === best.placeId} routeDetails={routeDetails} onRouteHere={onRouteHere} />
+          {alternates.filter(place => place.placeId !== best.placeId).slice(0, 2).map(place => (
+            <SafeWaitCard key={place.placeId} place={place} prominent={false} selected={selectedPlaceId === place.placeId} routeDetails={routeDetails} onRouteHere={onRouteHere} />
           ))}
         </div>
       )}
 
-      {routeError && <p className="stranded-error" role="alert">{routeError}</p>}
     </section>
   );
 }

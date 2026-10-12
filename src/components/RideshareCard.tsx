@@ -1,5 +1,9 @@
 'use client';
 
+import FarePrice from './FarePrice';
+
+import Image from 'next/image';
+import { formatDuration } from '@/lib/formatDuration';
 import type { RideshareOption } from '@/lib/types';
 import type { RouteCardLabel } from '@/components/RouteCard';
 
@@ -9,22 +13,14 @@ type RideshareCardProps = {
 	variant?: 'results' | 'stranded';
 };
 
-const providerMeta: Record<RideshareOption['provider'], { name: string; mark: string; actionLabel: string }> = {
-	LYFT: { name: 'Lyft', mark: 'L', actionLabel: 'Open Lyft' },
-	WAYMO: { name: 'Waymo', mark: 'W', actionLabel: 'Open Waymo' },
-	UBER: { name: 'Uber', mark: 'U', actionLabel: 'Open Uber' },
+const providerMeta: Record<RideshareOption['provider'], { name: string; logo: string; actionLabel: string }> = {
+	LYFT: { name: 'Lyft', logo: '/providers/lyft.png', actionLabel: 'Open Lyft' },
+	WAYMO: { name: 'Waymo', logo: '/providers/waymo.png', actionLabel: 'Open Waymo' },
+	UBER: { name: 'Uber', logo: '/providers/uber.jpg', actionLabel: 'Open Uber' },
 };
 
-function formatMoney(amount: number, currency: string) {
-	try {
-		return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount);
-	} catch {
-		return `$${Math.round(amount)}`;
-	}
-}
-
 function formatMinutes(minutes: number | undefined) {
-	return minutes === undefined ? 'Unavailable' : `${Math.round(minutes)} min`;
+	return formatDuration(minutes);
 }
 
 function openExternal(url: string) {
@@ -37,22 +33,14 @@ function badgeStyle(label: RouteCardLabel) {
 }
 
 /** Rideshare prices are estimates unless the backend marks them as provider-supplied. */
-function pricePresentation(option: RideshareOption): { text: string; caption: string } {
-	const hasRange = typeof option.estimatedPriceLow === 'number' && typeof option.estimatedPriceHigh === 'number';
-	if (hasRange) {
-		const currency = option.currency ?? 'USD';
-		const text = option.estimatedPriceLow === option.estimatedPriceHigh
-			? formatMoney(option.estimatedPriceLow!, currency)
-			: `${formatMoney(option.estimatedPriceLow!, currency)}–${formatMoney(option.estimatedPriceHigh!, currency)}`;
-		return {
-			text,
-			caption: option.priceSource === 'provider' ? 'Live provider price' : 'Estimated fare',
-		};
-	}
-	return {
-		text: option.provider === 'UBER' ? 'Price unavailable' : 'Estimate unavailable',
-		caption: option.provider === 'UBER' ? 'Shown in the Uber app' : 'Estimate could not be calculated',
-	};
+function legacyFare(option: RideshareOption): import('@/lib/pricing').FareEstimate {
+  const base: import('@/lib/pricing').FareEstimate = { provider: option.provider, currency: 'USD', sourceType: 'UNAVAILABLE',
+    confidence: 'LOW', label: 'Price unavailable', kind: 'UNAVAILABLE', appliesToTrip: false, retrievedAt: '' };
+  const low = option.estimatedPriceLow, high = option.estimatedPriceHigh;
+  if ((option.currency ?? 'USD') !== 'USD' || typeof low !== 'number' || typeof high !== 'number' || !Number.isFinite(low)
+    || !Number.isFinite(high) || low < 0 || high < low || option.priceSource === 'unavailable') return base;
+  return { ...base, priceLow: low, priceHigh: high, kind: 'RANGE', sourceType: option.priceSource === 'provider' ? 'LIVE_API' : 'MODELED',
+    label: option.priceSource === 'provider' ? 'Live provider price' : 'Estimated fare', appliesToTrip: true };
 }
 
 export default function RideshareCard({ option, labels = [], variant = 'results' }: RideshareCardProps) {
@@ -68,7 +56,7 @@ export default function RideshareCard({ option, labels = [], variant = 'results'
 				aria-labelledby={titleId}
 			>
 				<header className="rideshare-option-head">
-					<span className="rideshare-option-mark" aria-hidden="true">{meta.mark}</span>
+					<span className="rideshare-option-mark" aria-hidden="true"><Image src={meta.logo} alt="" width={26} height={26} className="rideshare-provider-logo" /></span>
 					<div className="min-w-0">
 						<h3 id={titleId} className="rideshare-option-name">{meta.name}</h3>
 						{option.vehicleType && <p className="rideshare-option-vehicle">{option.vehicleType}</p>}
@@ -89,7 +77,7 @@ export default function RideshareCard({ option, labels = [], variant = 'results'
 		);
 	}
 
-	const price = pricePresentation(option);
+	const fare = option.fare ?? legacyFare(option);
 
 	return (
 		<article
@@ -97,7 +85,7 @@ export default function RideshareCard({ option, labels = [], variant = 'results'
 			aria-labelledby={titleId}
 		>
 			<header className="rideshare-option-head">
-				<span className="rideshare-option-mark" aria-hidden="true">{meta.mark}</span>
+				<span className="rideshare-option-mark" aria-hidden="true"><Image src={meta.logo} alt="" width={26} height={26} className="rideshare-provider-logo" /></span>
 				<div className="min-w-0">
 					<h3 id={titleId} className="rideshare-option-name">{meta.name}</h3>
 					{option.vehicleType && <p className="rideshare-option-vehicle">{option.vehicleType}</p>}
@@ -114,8 +102,7 @@ export default function RideshareCard({ option, labels = [], variant = 'results'
 			</header>
 
 			<div className="rideshare-option-price-row">
-				<p className="rideshare-option-price">{price.text}</p>
-				{price.caption && <p className="rideshare-option-price-caption">{price.caption}</p>}
+				<FarePrice fare={fare} />
 			</div>
 
 			<dl className="rideshare-option-stats">
@@ -143,11 +130,11 @@ export default function RideshareCard({ option, labels = [], variant = 'results'
 				</ul>
 			)}
 
-			{option.bookingUrl && (
+			{(fare.bookingUrl ?? option.bookingUrl) && (
 				<button
 					type="button"
 					className="rideshare-option-action"
-					onClick={() => openExternal(option.bookingUrl!)}
+					onClick={() => openExternal((fare.bookingUrl ?? option.bookingUrl)!)}
 				>
 					{meta.actionLabel}
 				</button>

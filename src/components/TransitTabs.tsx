@@ -1,10 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { formatDuration } from '@/lib/formatDuration';
 import type { Location, RouteOption, TransitAlternative } from '@/lib/types';
 import Map from '@/components/Map';
+import FarePrice from './FarePrice';
+import { combineAdjacentWalkingSegments } from '@/lib/transitDisplay';
 
 type TransitTabsProps = {
+	variant?: 'results' | 'stranded';
 	route: RouteOption;
 	origin: Location;
 	destination: Location;
@@ -30,7 +34,7 @@ function fareText(alt: TransitAlternative): string {
 function stepInstruction(step: TransitAlternative['steps'][number]): string {
 	if (step.mode === 'WALK') {
 		const minutes = step.durationMinutes !== null && step.durationMinutes !== undefined ? Math.round(step.durationMinutes) : null;
-		return minutes !== null ? `Walk ${minutes} min` : 'Walk';
+		return minutes !== null ? `Walk ${formatDuration(minutes)}` : 'Walk';
 	}
 	if (step.mode === 'TRANSIT' && step.transit) {
 		const line = step.transit.line ?? step.transit.lineShortName ?? step.transit.vehicleName ?? '';
@@ -44,13 +48,14 @@ function stepInstruction(step: TransitAlternative['steps'][number]): string {
 	return step.instruction || (step.mode === 'TRANSIT' ? 'Transit' : step.mode);
 }
 
-export default function TransitTabs({ route, origin, destination }: TransitTabsProps) {
+export default function TransitTabs({ route, origin, destination, variant = 'results' }: TransitTabsProps) {
 	const alternatives = route.transitAlternatives ?? [];
 	const [selectedId, setSelectedId] = useState<string>(() =>
 		alternatives.find(alt => alt.recommended)?.id ?? alternatives[0]?.id ?? '',
 	);
 	const selected = alternatives.find(alt => alt.id === selectedId) ?? alternatives[0];
 	const showTabs = alternatives.length > 1;
+	const displaySteps = combineAdjacentWalkingSegments(selected?.steps ?? []);
 	// Map expects a RouteOption; shape one from the selected alternative's own geometry/data.
 	const mapRoute: RouteOption = selected
 		? { ...route, encodedPolyline: selected.encodedPolyline ?? route.encodedPolyline, steps: selected.steps }
@@ -69,7 +74,7 @@ export default function TransitTabs({ route, origin, destination }: TransitTabsP
 	}
 
 	return (
-		<div className="transit-tabs">
+		<div className={`transit-tabs ${variant === 'stranded' ? 'stranded-transit-content' : ''}`}>
 			{showTabs && (
 				<div className="transit-tab-bar" role="tablist" aria-label="Transit options">
 					{alternatives.map(alt => {
@@ -85,8 +90,8 @@ export default function TransitTabs({ route, origin, destination }: TransitTabsP
 							>
 								<span className="transit-tab-title">{lineLabel(alt)}</span>
 								<span className="transit-tab-sub">
-									{Math.round(alt.durationMinutes)} min
-									{alt.walkingMinutes !== null ? ` · ${Math.round(alt.walkingMinutes)} min walk` : ''}
+									{formatDuration(alt.durationMinutes)}
+									{alt.walkingMinutes !== null ? ` · ${formatDuration(alt.walkingMinutes)} walk` : ''}
 								</span>
 								{alt.availability?.available === false && (
 									<span className="transit-tab-unavailable">Unavailable</span>
@@ -113,21 +118,22 @@ export default function TransitTabs({ route, origin, destination }: TransitTabsP
 			)}
 
 			<div className="transit-option-summary">
-				<span>{Math.round(selected.durationMinutes)} min total</span>
-				{selected.walkingMinutes !== null && <span> · Walking: {Math.round(selected.walkingMinutes)} min</span>}
-				<span> · {fareText(selected)}</span>
+				<span>{formatDuration(selected.durationMinutes)} total</span>
+				{selected.walkingMinutes !== null && <span> · Walking: {formatDuration(selected.walkingMinutes)}</span>}
+				{selected.fare ? <FarePrice fare={selected.fare} /> : <span> · {fareText(selected)}</span>}
 				<span> · Transfers: {selected.transfers}</span>
 			</div>
 
 			<ol className="transit-timeline" aria-label="Journey steps">
-				{selected.steps.map((step, index) => {
+				{displaySteps.map((step, index) => {
 					const isTransit = step.mode === 'TRANSIT' && step.transit;
-					const isTransfer = isTransit && index > 0 && selected.steps[index - 1].mode === 'TRANSIT';
+					const isTransfer = isTransit && index > 0 && displaySteps[index - 1].mode === 'TRANSIT';
 					return (
 						<li key={`${index}-${step.instruction}`} className={`transit-timeline-step ${isTransit ? 'is-transit' : 'is-walk'}`}>
 							{isTransfer && <span className="transit-transfer">Transfer</span>}
 							<span className="transit-step-label">
 								{stepInstruction(step)}
+								{step.mode === 'WALK' && step.instruction && <span className="transit-stop"> · {step.instruction}</span>}
 								{step.transit?.departureStop && <span className="transit-stop"> at {step.transit.departureStop}</span>}
 								{step.transit?.arrivalStop && <span className="transit-stop"> → {step.transit.arrivalStop}</span>}
 								{step.transit?.stopCount !== null && step.transit?.stopCount !== undefined && step.transit.stopCount > 0 && (
@@ -135,7 +141,7 @@ export default function TransitTabs({ route, origin, destination }: TransitTabsP
 								)}
 							</span>
 							{step.durationMinutes !== null && step.durationMinutes !== undefined && (
-								<span className="transit-step-time">{Math.round(step.durationMinutes)} min</span>
+								<span className="transit-step-time">{formatDuration(step.durationMinutes)}</span>
 							)}
 						</li>
 					);

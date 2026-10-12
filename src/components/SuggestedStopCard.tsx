@@ -1,4 +1,5 @@
 import type { SuggestedStop } from '@/lib/types';
+import { formatDuration } from '@/lib/formatDuration';
 
 type SuggestedStopCardProps = {
 	stop: SuggestedStop;
@@ -23,7 +24,7 @@ export default function SuggestedStopCard({ stop, onAddToTrip, busy = false }: S
 				<span className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-[#43534b]">
 					<span>Rating: {stop.rating === null ? 'Unavailable' : stop.rating.toFixed(1)}</span>
 					<span aria-hidden="true" className="text-[#a3ada6]">·</span>
-					<span>{stop.estimatedExtraMinutes === null ? 'Extra time unknown' : `+${Math.round(stop.estimatedExtraMinutes)} min`}</span>
+					<span>{stop.estimatedExtraMinutes === null ? 'Extra time unknown' : `+${formatDuration(stop.estimatedExtraMinutes)}`}</span>
 				</span>
 				<span className="mt-3 block text-xs text-[#68766f]">Estimated spend</span>
 				<span className="mt-0.5 block text-sm font-semibold text-[#192923]">

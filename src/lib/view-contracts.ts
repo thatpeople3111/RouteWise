@@ -1,3 +1,4 @@
+import { fareSchema } from './pricing';
 import { z } from 'zod';
 
 export const coordinatesSchema = z.object({
@@ -60,6 +61,7 @@ export const stepSchema = z.object({
   }).nullable(),
 });
 export const routeSchema = z.object({
+  fare: fareSchema.optional(),
   tolls: z.object({
     status: z.enum(['estimated', 'unknown', 'not_reported']),
     prices: z.array(z.object({ amount: z.number().nonnegative(), currency: z.string() })),
@@ -72,7 +74,7 @@ export const routeSchema = z.object({
       mapsUri: z.string().url(), openNow: z.boolean().nullable(),
       priceAmount: z.number().nonnegative().nullable().optional(),
       priceCurrency: z.string().optional(),
-      priceSource: z.enum(['official_config', 'unavailable']).optional(),
+      priceSource: z.enum(['official_config', 'unavailable']).optional(), fare: fareSchema.optional(),
       walkingMinutes: z.number().nonnegative().nullable().optional(),
       walkingDistanceMeters: z.number().nonnegative().nullable().optional(),
       recommended: z.boolean().optional(),
@@ -105,7 +107,7 @@ export const routeSchema = z.object({
 });
 export const rideshareOptionSchema = z.object({
   id: z.string(),
-  provider: rideshareProviderSchema,
+  provider: rideshareProviderSchema, fare: fareSchema.optional(),
   available: z.boolean(),
   unavailableReason: z.string().optional(),
   unavailableDetail: z.string().optional(),
@@ -133,6 +135,8 @@ export const nearbyResponseSchema = z.object({
   dataMode: z.enum(['demo', 'live']), places: z.array(placeSchema), warnings: z.array(z.string()),
 });
 export const tripResponseSchema = z.object({
+  tripScope: z.enum(['LOCAL', 'LONG_DISTANCE']).optional(),
+  longDistance: z.custom<import('./longDistance').LongDistanceView>().optional(),
   id: z.string(), generatedAt: z.string(), dataMode: z.enum(['demo', 'live']),
   routes: z.array(routeSchema),
   best: z.string().nullable(), cheapest: z.string().nullable(), fastest: z.string().nullable(),
@@ -157,6 +161,7 @@ export type NearbyResponse = z.infer<typeof nearbyResponseSchema>;
 export type RideshareProvider = z.infer<typeof rideshareProviderSchema>;
 export type RideshareOption = z.infer<typeof rideshareOptionSchema>;
 export type TransitAlternative = {
+  fare?: import('./pricing').FareEstimate;
   id: string;
   title: string;
   durationMinutes: number;

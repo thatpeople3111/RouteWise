@@ -7,9 +7,11 @@ import type {
   SafeWaitCandidate,
   StopCategory,
 } from '../types/index';
+import { stopCategoryConfig } from './stopCategoryConfig';
 
 const PLACES_NEARBY_URL = 'https://places.googleapis.com/v1/places:searchNearby';
 const PLACE_FIELD_MASK = [
+  'places.types',
   'places.id',
   'places.displayName',
   'places.formattedAddress',
@@ -21,9 +23,7 @@ const PLACE_FIELD_MASK = [
   'places.regularOpeningHours.openNow',
   'places.googleMapsUri',
 ].join(',');
-const DEFAULT_RADIUS_METERS = 1500;
 const DEFAULT_MAX_RESULTS = 20;
-const MAX_ROUTE_SEARCH_POINTS = 6;
 const VALID_PRICE_LEVELS: readonly PlacePriceLevel[] = [
   'PRICE_LEVEL_FREE',
   'PRICE_LEVEL_INEXPENSIVE',
@@ -36,18 +36,18 @@ const VALID_BUSINESS_STATUSES: readonly PlaceBusinessStatus[] = [
   'CLOSED_TEMPORARILY',
   'CLOSED_PERMANENTLY',
 ];
-const GOOGLE_PLACE_TYPES: Record<StopCategory, string> = {
-  food: 'restaurant',
-  coffee: 'cafe',
-  gas: 'gas_station',
-  groceries: 'grocery_store',
-  dessert: 'dessert_shop',
-  pharmacy: 'pharmacy',
-};
 
 export interface PlacesServiceOptions {
   apiKey?: string;
   fetchImpl?: typeof fetch;
+}
+
+interface PlaceSearchDiagnostics {
+  rawCandidates: number;
+  invalidCoordinates: number;
+  categoryRejected: number;
+  closedRejected: number;
+  outsideRadius: number;
 }
 
 export class GooglePlacesApiError extends Error {
@@ -143,13 +143,13 @@ function pointAtDistance(points: Coordinates[], segmentLengths: number[], distan
   return points[points.length - 1];
 }
 
-function sampleRoute(encodedPolyline: string, radiusMeters: number): Coordinates[] {
+function sampleRoute(encodedPolyline: string, expanded = false): Coordinates[] {
   const points = decodePolyline(encodedPolyline);
   const segmentLengths = points.slice(1).map((point, index) => haversineMeters(points[index], point));
   const routeLength = segmentLengths.reduce((sum, length) => sum + length, 0);
   // Distribute searches along the route instead of clustering near the origin. Skip the first
   // ~12% so early results are genuinely "into" the trip, then sample early/mid/late zones.
-  const zoneFractions = routeLength < 4000
+  const zoneFractions = expanded ? [0.12, 0.25, 0.4, 0.55, 0.72, 0.88] : routeLength < 4000
     ? [0.35, 0.65] // short trips: two broad zones
     : [0.18, 0.32, 0.48, 0.62]; // longer trips: early + mid spread
   return zoneFractions.map(fraction =>
@@ -161,7 +161,7 @@ function optionalEnum<T extends string>(value: unknown, values: readonly T[]): T
   return typeof value === 'string' && values.includes(value as T) ? value as T : null;
 }
 
-function parsePlace(value: unknown, category: StopCategory): PlaceCandidate | null {
+function parsePlace(value: unknown, category: StopCategory, diagnostics?: PlaceSearchDiagnostics): PlaceCandidate | null {
   if (!isRecord(value)
     || typeof value.id !== 'string'
     || value.id.length === 0
@@ -176,6 +176,15 @@ function parsePlace(value: unknown, category: StopCategory): PlaceCandidate | nu
     : isRecord(value.location) && isCoordinates(value.location.latLng)
       ? value.location.latLng
       : null;
+  if (!location) { if (diagnostics) diagnostics.invalidCoordinates++; return null; }
+  if (value.businessStatus === 'CLOSED_PERMANENTLY' || value.businessStatus === 'CLOSED_TEMPORARILY') {
+    if (diagnostics) diagnostics.closedRejected++; return null;
+  }
+  // Missing optional metadata is retained; known conflicting category data is not.
+  if (Array.isArray(value.types) && !value.types.includes(stopCategoryConfig[category].type)
+    && !(category === 'dessert' && value.types.some(type => ['bakery', 'ice_cream_shop', 'confectionery'].includes(type)))) {
+    if (diagnostics) diagnostics.categoryRejected++; return null;
+  }
   const openingHours = isRecord(value.currentOpeningHours)
     ? value.currentOpeningHours
     : isRecord(value.regularOpeningHours)
@@ -210,7 +219,7 @@ function validateRequest(input: PlaceSearchRequest): { radiusMeters: number; max
     throw new GooglePlacesApiError('INVALID_REQUEST', 'Search area must be ON_ROUTE or DESTINATION.', 400);
   }
 
-  const radiusMeters = input.radiusMeters ?? DEFAULT_RADIUS_METERS;
+  const radiusMeters = input.radiusMeters ?? stopCategoryConfig[input.category].radius;
   const maxResults = input.maxResults ?? DEFAULT_MAX_RESULTS;
   if (!Number.isInteger(radiusMeters) || radiusMeters < 100 || radiusMeters > 50_000) {
     throw new GooglePlacesApiError('INVALID_REQUEST', 'radiusMeters must be an integer from 100 to 50000.', 400);
@@ -228,18 +237,25 @@ async function searchNearby(
   maxResultCount: number,
   apiKey: string,
   fetchImpl: typeof fetch,
+  textSearch = false,
+  diagnostics?: PlaceSearchDiagnostics,
 ): Promise<PlaceCandidate[]> {
   let response: Response;
   try {
-    response = await fetchImpl(PLACES_NEARBY_URL, {
+    response = await fetchImpl(textSearch ? 'https://places.googleapis.com/v1/places:searchText' : PLACES_NEARBY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
         'X-Goog-FieldMask': PLACE_FIELD_MASK,
       },
-      body: JSON.stringify({
-        includedTypes: [GOOGLE_PLACE_TYPES[input.category]],
+      body: JSON.stringify(textSearch ? {
+        textQuery: stopCategoryConfig[input.category].textQuery,
+        ...(input.category === 'dessert' ? {} : { includedType: stopCategoryConfig[input.category].type, strictTypeFiltering: true }),
+        pageSize: maxResultCount,
+        locationBias: { circle: { center, radius: radiusMeters } },
+      } : {
+        includedTypes: [stopCategoryConfig[input.category].type],
         maxResultCount,
         rankPreference: 'DISTANCE',
         locationRestriction: {
@@ -274,38 +290,63 @@ async function searchNearby(
     throw new GooglePlacesApiError('INVALID_RESPONSE', 'Google Places API returned an invalid places list.', 502, response.status);
   }
 
-  return (Array.isArray(payload.places) ? payload.places : [])
-    .map(place => parsePlace(place, input.category))
-    .filter((place): place is PlaceCandidate => place !== null);
+  const raw = Array.isArray(payload.places) ? payload.places : [];
+  if (diagnostics) diagnostics.rawCandidates += raw.length;
+  return raw.map(place => parsePlace(place, input.category, diagnostics))
+    .filter((place): place is PlaceCandidate => {
+      if (!place?.coordinates) return false;
+      if (haversineMeters(place.coordinates, center) > radiusMeters) { if (diagnostics) diagnostics.outsideRadius++; return false; }
+      return true;
+    });
 }
 
 export async function searchPlaces(
   input: PlaceSearchRequest,
-  options: PlacesServiceOptions = {},
+  options: PlacesServiceOptions & { broaden?: boolean } = {},
 ): Promise<PlaceCandidate[]> {
   const { radiusMeters, maxResults } = validateRequest(input);
   const centers = input.searchArea === 'DESTINATION'
     ? [input.destination]
-    : sampleRoute(input.routePolyline, radiusMeters);
+    : sampleRoute(input.routePolyline, options.broaden);
   const apiKey = (options.apiKey ?? process.env.GOOGLE_MAPS_API_KEY)?.trim();
   if (!apiKey) {
     throw new GooglePlacesApiError('MISSING_API_KEY', 'GOOGLE_MAPS_API_KEY is required to search places.', 500);
   }
 
-  const resultGroups = await Promise.all(centers.map(center => searchNearby(
-    center,
-    input,
-    radiusMeters,
-    maxResults,
-    apiKey,
-    options.fetchImpl ?? fetch,
-  )));
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const diagnostics: PlaceSearchDiagnostics = { rawCandidates: 0, invalidCoordinates: 0, categoryRejected: 0, closedRejected: 0, outsideRadius: 0 };
+  const failures: unknown[] = [];
+  const searchStage = async (radius: number, text = false) => {
+    const results = await Promise.allSettled(centers.map(center => searchNearby(center, input, radius, maxResults, apiKey, fetchImpl, text, diagnostics)));
+    return results.flatMap(result => {
+      if (result.status === 'fulfilled') return [result.value];
+      failures.push(result.reason); return [];
+    });
+  };
+  const resultGroups = await searchStage(radiusMeters);
+  const initialRaw = resultGroups.flat().length;
+  const usefulCount = () => dedupeClusteredPlaces(resultGroups.flat()).length;
+  if (options.broaden || usefulCount() < 4) {
+    const expandedRadius = Math.max(radiusMeters, stopCategoryConfig[input.category].expandedRadius);
+    resultGroups.push(...await searchStage(expandedRadius));
+    if (options.broaden || usefulCount() < 4) {
+      resultGroups.push(...await searchStage(expandedRadius, true));
+    }
+  }
 
   const uniquePlaces = new Map<string, PlaceCandidate>();
   for (const place of resultGroups.flat()) {
     if (!uniquePlaces.has(place.placeId)) uniquePlaces.set(place.placeId, place);
   }
-  return [...uniquePlaces.values()];
+  const candidates = [...uniquePlaces.values()];
+  if (process.env.NODE_ENV === 'development') console.debug('[RouteWise stop search]', {
+    category: input.category, samplePoints: centers.length, primaryCandidates: initialRaw,
+    parsedCandidates: resultGroups.flat().length, afterDedupe: candidates.length, providerFailures: failures.length,
+    emptyStage: candidates.length === 0 ? 'Places/category/coordinates search' : undefined,
+    ...diagnostics,
+  });
+  if (!candidates.length && failures.length) throw failures[0];
+  return candidates;
 }
 
 /** Removes candidates that are effectively the same spot (same name within ~60 m). */

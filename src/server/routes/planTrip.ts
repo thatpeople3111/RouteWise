@@ -3,6 +3,8 @@ import { GoogleRoutesApiError } from '../services/maps';
 import { createTripPlan } from '../services/tripPlanning';
 import { readJsonBody, sendJson } from '../utils/http';
 import { isFinalTripRequest } from '../utils/validation';
+import { resolveTripLocations } from '../services/locationResolution';
+import { GooglePlacesApiError } from '../services/places';
 
 export async function handlePlanTrip(
   request: IncomingMessage,
@@ -22,9 +24,9 @@ export async function handlePlanTrip(
   }
 
   try {
-    sendJson(response, 200, await createTripPlan(body));
+    sendJson(response, 200, await createTripPlan(await resolveTripLocations(body)));
   } catch (error) {
-    if (error instanceof GoogleRoutesApiError) {
+    if (error instanceof GoogleRoutesApiError || error instanceof GooglePlacesApiError) {
       sendJson(response, error.statusCode, {
         error: { code: error.code, message: error.message },
       });

@@ -74,6 +74,7 @@ export type RouteConstraintState = 'met' | 'exceeded' | 'unknown' | 'not_request
 export type RidesharePriceSource = 'estimate' | 'provider' | 'unavailable';
 
 export interface RideshareOption {
+  fare?: import('../pricing/types').FareEstimate;
   id: string;
   provider: RideshareProvider;
   available: boolean;
@@ -119,6 +120,7 @@ export interface TripPlanStep {
 
 /** One distinct public-transit journey alternative (which may itself contain transfers). */
 export interface TransitAlternative {
+  fare?: import('../pricing/types').FareEstimate;
   id: string;
   /** Short label derived from the actual vehicle types/lines, e.g. "Bus" or "Bus + Rail". */
   title: string;
@@ -145,6 +147,7 @@ export interface TransitAlternative {
 }
 
 export interface TripPlanRouteOption {
+  fare?: import('../pricing/types').FareEstimate;
   encodedPolyline?: string;
   tolls?: TollEstimate;
   parking?: DestinationParking;
@@ -185,6 +188,8 @@ export interface TripPlanRouteOption {
 }
 
 export interface TripPlan {
+  tripScope?: 'LOCAL' | 'LONG_DISTANCE';
+  longDistance?: import('./longDistance').LongDistancePlan;
   id: string;
   generatedAt: string;
   dataMode: 'live' | 'demo';
@@ -302,6 +307,7 @@ export interface ParkingLocation {
   priceAmount?: number | null;
   priceCurrency?: string;
   priceSource?: 'official_config' | 'unavailable';
+  fare?: import('../pricing/types').FareEstimate;
   /** Pedestrian route time from this lot to the destination, when routing is available. */
   walkingMinutes?: number | null;
   walkingDistanceMeters?: number | null;

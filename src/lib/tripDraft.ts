@@ -1,5 +1,12 @@
 import type { Coordinates, RideshareProvider, TripRequest } from './types';
 
+export interface SelectedTripPlace {
+  placeId: string;
+  name: string;
+  formattedAddress: string;
+  coordinates: Coordinates;
+}
+
 /**
  * A single trip draft shared across the Trip Details and Constraints setup screens.
  * One source of truth; assembled into the existing TripRequest only on "Let's Go!".
@@ -10,6 +17,8 @@ export interface TripDraft {
   /** Resolved current-location coordinates, when the user chose "Use my location". */
   originCoordinates: Coordinates | null;
   destinationText: string;
+  originPlace?: SelectedTripPlace | null;
+  destinationPlace?: SelectedTripPlace | null;
   scheduleMode: 'departure' | 'arrival';
   /** Local datetime-local value for the chosen schedule mode. */
   scheduleTime: string;
@@ -60,10 +69,10 @@ export function draftToTripRequest(draft: TripDraft): TripRequest {
     throw new Error('Choose a time in the future and within the next seven days.');
   }
   const timestamp = date.toISOString();
-  const origin = draft.originCoordinates ?? { address: draft.originText.trim() };
+  const origin = draft.originPlace ? { placeId: draft.originPlace.placeId } : draft.originCoordinates ?? { address: draft.originText.trim() };
   return {
     origin,
-    destination: { address: draft.destinationText.trim() },
+    destination: draft.destinationPlace ? { placeId: draft.destinationPlace.placeId } : { address: draft.destinationText.trim() },
     ...(draft.scheduleMode === 'arrival' ? { arrivalTime: timestamp } : { departureTime: timestamp }),
     budgetUsd: draft.budgetUsd,
     maxWalkingMinutes: draft.allowWalking ? draft.maxWalkingMinutes : 0,

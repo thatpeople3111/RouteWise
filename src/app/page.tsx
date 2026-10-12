@@ -17,6 +17,8 @@ import type { SuggestedStopCategory, StopTimeOfDay } from "@/lib/api-types";
 
 import { buildInitialSuggestPreference, planTrip, suggestStops } from "@/lib/api";
 
+type StopFlowState = "OPT_IN" | "PREFERENCES" | "RECOMMENDATIONS";
+
 type Screen =
   | "HOME"
   | "TRIP_DETAILS"
@@ -28,12 +30,13 @@ type Screen =
   | "STRANDED";
 
 export default function Home() {
+  const [stopFlow, setStopFlow] = useState<StopFlowState>("OPT_IN");
   const [screen, setScreen] = useState<Screen>("HOME");
   const [draft, setDraft] = useState<TripDraft>(DEFAULT_TRIP_DRAFT);
   const [trip, setTrip] = useState<TripInput | null>(null);
   const [stopPreference, setStopPreference] = useState<StopPreference | null>(null);
   const [submittedStopPreference, setSubmittedStopPreference] = useState<StopPreferenceSubmission | null>(null);
-  const [selectedStop, setSelectedStop] = useState<SuggestedStop | null>(null);
+  const [, setSelectedStop] = useState<SuggestedStop | null>(null);
   const [addedStop, setAddedStop] = useState<SuggestedStop | null>(null);
 
   const [suggestions, setSuggestions] = useState<SuggestedStop[]>([]);
@@ -47,9 +50,9 @@ export default function Home() {
   const requestId = useRef(0);
 
   async function handleTripSubmit(submittedTrip: TripInput) {
-    const id = ++requestId.current;
+    ++requestId.current;
     // Do NOT fetch or render stop businesses yet. Only seed the stop preferences and move to the
-    // stop-preference screen; real suggestions load only after the user presses "Find stops".
+    // stop opt-in screen; real suggestions load only after the user presses "Find stops".
     const initialPreference = buildInitialSuggestPreference(submittedTrip);
     setTrip(submittedTrip);
     setStopPreference({
@@ -68,34 +71,19 @@ export default function Home() {
     setWarnings([]);
     setError('');
     setPlan(null);
-    setBusy(true);
-    setScreen('CHECKING_ROUTE');
-    try {
-      // Lightweight category/availability context only; no business candidates requested here.
-      const result = await suggestStops(submittedTrip, { skip: false, category: initialPreference.category, timing: initialPreference.timing, maxExtraMinutes: initialPreference.maxExtraMinutes, maxExtraBudget: initialPreference.maxExtraBudget });
-      if (id !== requestId.current) return;
-      setAvailableCategories(result.availableCategories);
-      setRecommendedCategories(result.recommendedCategories);
-      setSuggestionTimeOfDay(result.timeOfDay);
-      setScreen('STOP_OPTIONS');
-    } catch (failure) {
-      if (id !== requestId.current) return;
-      console.error('[RouteWise] Stop-preference setup failed.', failure);
-      setError(failure instanceof Error ? failure.message : 'Could not check this trip. Please try again.');
-      setScreen('STOP_OPTIONS');
-    } finally {
-      if (id === requestId.current) setBusy(false);
-    }
+    setBusy(false);
+    setStopFlow('OPT_IN');
+    setScreen('STOP_OPTIONS');
   }
 
-  async function startPlanning(stop: SuggestedStop | null = null) {
+  async function startPlanning(stop: SuggestedStop | null = null, preference = submittedStopPreference) {
     if (!trip || busy) return;
     const id = ++requestId.current;
     setBusy(true);
     setError('');
     setScreen('PLANNING');
     try {
-      const result = await planTrip(trip, submittedStopPreference, stop);
+      const result = await planTrip(trip, preference, stop);
       if (id !== requestId.current) return;
       setAddedStop(stop);
       setPlan(result);
@@ -118,7 +106,8 @@ export default function Home() {
     setSuggestions([]);
     setWarnings([]);
     setError('');
-    if (preference.skip) { await startPlanning(); return; }
+    if (preference.skip) { await startPlanning(null, preference); return; }
+    setStopFlow("RECOMMENDATIONS");
     const id = ++requestId.current;
     setBusy(true);
     try {
@@ -147,7 +136,7 @@ export default function Home() {
     setError('');
   }
 
-  function handleAddStop(stop: SuggestedStop) { void startPlanning(stop); }
+  function handleAddStop(stop: SuggestedStop) { setSelectedStop(stop); void startPlanning(stop); }
   const matchingStops = suggestions;
 
   function updateDraft(patch: Partial<TripDraft>) {
@@ -155,6 +144,9 @@ export default function Home() {
   }
 
   function startOver() {
+    ++requestId.current;
+    setBusy(false);
+    setStopFlow('OPT_IN');
     setDraft(DEFAULT_TRIP_DRAFT);
     setTrip(null);
     setStopPreference(null);
@@ -187,7 +179,7 @@ export default function Home() {
     <main className="app-shell">
       <div className="page-container">
         <header className="site-header">
-          <Link className="brand" href="/" aria-label="RouteWise home">
+          <Link className="brand" href="/" aria-label="RouteWise home" onClick={event => { event.preventDefault(); startOver(); }}>
             <span className="brand-mark" aria-hidden="true">R</span>
             <span>routewise</span>
           </Link>
@@ -247,8 +239,18 @@ export default function Home() {
               <legend className="sr-only">Optional stops</legend>
               {warnings.map(warning => <p key={warning} role="status">{warning}</p>)}
               <button type="button" className="location-button" onClick={() => { setError(''); setScreen('TRIP_DETAILS'); }}>Edit trip</button>
-              {!submittedStopPreference && (
+              {stopFlow === "OPT_IN" && (
+                <section className="route-results p-5 sm:p-8" aria-labelledby="stop-opt-in-title">
+                  <h2 id="stop-opt-in-title" className="font-serif text-2xl font-medium text-[#192923]">Want to add an additional stop?</h2>
+                  <div className="mt-6 flex flex-col gap-3">
+                    <button type="button" className="submit-button" onClick={() => setStopFlow('PREFERENCES')}>Yes, add a stop</button>
+                    <button type="button" className="location-button" onClick={() => handleStopPreferenceSubmit({ skip: true })}>No thanks — continue</button>
+                  </div>
+                </section>
+              )}
+              {stopFlow === "PREFERENCES" && (
                 <StopPreferences
+                  onBack={() => setStopFlow("OPT_IN")}
                   value={stopPreference}
                   availableCategories={availableCategories}
                   recommendedCategories={recommendedCategories}
@@ -257,7 +259,7 @@ export default function Home() {
                   onSubmit={handleStopPreferenceSubmit}
                 />
               )}
-              {submittedStopPreference && !submittedStopPreference.skip && (
+              {stopFlow === "RECOMMENDATIONS" && (
                 <section className="route-results p-5 sm:p-7" aria-labelledby="stop-results-title" aria-live="polite">
                   <div className="results-header">
                     <div>
@@ -294,11 +296,11 @@ export default function Home() {
                     </div>
                   ) : (
                     <p className="mt-4 rounded-sm border-l-4 border-[#dce5dc] bg-[#f8faf6] px-3 py-3 text-sm text-[#68766f]">
-                      No stops match your current restrictions. Adjust your preferences or continue without a stop.
+                      {error ? 'We could not load these stops right now. Change preferences and try again.' : `No ${stopPreference?.category === 'gas' ? 'gas stations' : stopPreference?.category === 'groceries' ? 'grocery stores' : stopPreference?.category === 'pharmacy' ? 'pharmacies' : stopPreference?.category === 'coffee' ? 'coffee shops' : stopPreference?.category === 'dessert' ? 'dessert places' : 'restaurants'} fit this trip and its current limits. Try increasing your maximum added time or changing where to search.`}
                     </p>
                   )}
                   <div className="form-footer mt-5 border-t border-[#dce5dc] pt-4">
-                    <button type="button" className="location-button" onClick={() => { setSubmittedStopPreference(null); setSuggestions([]); setError(''); }}>
+                    <button type="button" className="location-button" onClick={() => { setStopFlow('PREFERENCES'); setError(''); }}>
                       Change preferences
                     </button>
                     <span />

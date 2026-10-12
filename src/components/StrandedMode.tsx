@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
-import RouteResults from '@/components/RouteResults';
-import RideshareOptions, { rideshareLabelsById } from '@/components/RideshareOptions';
-import SafeWaitPanel from '@/components/SafeWaitPanel';
-import { findSafeWaitPlaces, planTrip } from '@/lib/api';
+import StrandedResults from '@/components/StrandedResults';
+import SafePlaceRoutes from '@/components/SafePlaceRoutes';
+import { findSafeWaitPlaces, planTrip, resolveLocation } from '@/lib/api';
+import type { SelectedTripPlace } from '@/lib/tripDraft';
 import { tripRequestSchema } from '@/lib/validation';
 import type { Coordinates, SafeWaitCandidate, TripInput, TripPlan } from '@/lib/types';
 
@@ -39,13 +39,12 @@ function locationErrorMessage(error: GeolocationPositionError): string {
 export default function StrandedMode({ onExit }: StrandedModeProps) {
   const [location, setLocation] = useState<LocationState>({ status: 'locating' });
   const [destination, setDestination] = useState('');
+  const [destinationPlace, setDestinationPlace] = useState<SelectedTripPlace | null>(null);
+  const [destinationChoices, setDestinationChoices] = useState<SelectedTripPlace[]>([]);
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [safeWait, setSafeWait] = useState<SafeWaitState>({ status: 'idle' });
-  const [waitPlan, setWaitPlan] = useState<{ plan: TripPlan; place: SafeWaitCandidate } | null>(null);
-  const [waitBusyPlaceId, setWaitBusyPlaceId] = useState<string | null>(null);
-  const [waitError, setWaitError] = useState('');
 
   function retryCurrentLocation() {
     if (!navigator.geolocation) {
@@ -107,9 +106,15 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
     setBusy(true);
 
     try {
+      let selected = destinationPlace;
+      if (!selected) {
+        const resolved = await resolveLocation(destination, location.coordinates);
+        if (!resolved.place) { setDestinationChoices(resolved.alternatives); setError('Choose a destination below, or add a more specific location.'); return; }
+        selected = resolved.place; setDestinationPlace(selected);
+      }
       const request: TripInput = tripRequestSchema.parse({
         origin: location.coordinates,
-        destination: { address: destination.trim() },
+        destination: { placeId: selected.placeId },
         departureTime: new Date().toISOString(),
         budgetUsd: 1000,
         maxWalkingMinutes: 180,
@@ -133,61 +138,7 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
     }
   }
 
-  async function routeToWaitPlace(place: SafeWaitCandidate) {
-    if (location.status !== 'ready' || waitBusyPlaceId) return;
-    setWaitError('');
-    setWaitBusyPlaceId(place.placeId);
-
-    try {
-      const request: TripInput = tripRequestSchema.parse({
-        origin: location.coordinates,
-        destination: place.coordinates ?? { address: place.address ?? place.name },
-        departureTime: new Date().toISOString(),
-        budgetUsd: 1000,
-        maxWalkingMinutes: 180,
-        hasCar: false,
-        hasBike: false,
-        allowTransit: true,
-        allowWalking: true,
-        preference: 'fastest',
-        nearbyCategories: [],
-        notes: 'RouteWise Stranded mode request: temporary route to a nearby safe waiting place.',
-      });
-      const result = await planTrip(request, { skip: true }, null);
-      setWaitPlan({ plan: result, place });
-    } catch (failure) {
-      setWaitError(failure instanceof Error ? failure.message : 'Could not route to this location. Try again.');
-    } finally {
-      setWaitBusyPlaceId(null);
-    }
-  }
-
   if (plan && location.status === 'ready') {
-    if (waitPlan) {
-      return (
-        <div className="stranded-results">
-          <button className="stranded-back" type="button" onClick={() => setWaitPlan(null)}>
-            <span aria-hidden="true">←</span> Continue to {destination.trim()}
-          </button>
-          <div className="stranded-results-meta" role="status">
-            <span className="stranded-ready-dot" aria-hidden="true" />
-            <span className="stranded-current-location">Current Location</span>
-            <span aria-hidden="true" className="stranded-meta-sep">·</span>
-            <span className="stranded-meta-destination">Original destination saved: <strong>{destination.trim()}</strong></span>
-          </div>
-          <p className="safe-wait-active-banner" role="status">
-            Temporary route to {waitPlan.place.name}. Use the button above to continue to your original destination.
-          </p>
-          <RouteResults
-            plan={waitPlan.plan}
-            origin={location.coordinates}
-            destination={waitPlan.place.coordinates ?? { address: waitPlan.place.address ?? waitPlan.place.name }}
-            onEditTrip={() => setWaitPlan(null)}
-          />
-        </div>
-      );
-    }
-
     return (
       <div className="stranded-results">
         <button className="stranded-back" type="button" onClick={() => setPlan(null)}>
@@ -199,33 +150,21 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
           <span aria-hidden="true" className="stranded-meta-sep">·</span>
           <span className="stranded-meta-destination">Destination: <strong>{destination.trim()}</strong></span>
         </div>
-
-        <section className="stranded-group" aria-labelledby="stranded-group-destination-title">
-          <p className="stranded-group-label" id="stranded-group-destination-title">GET TO DESTINATION</p>
-          <RouteResults
-            plan={plan}
-            origin={location.coordinates}
-            destination={{ address: destination.trim() }}
-            onEditTrip={() => setPlan(null)}
-          />
-          <RideshareOptions options={plan.rideshares ?? []} labelsById={rideshareLabelsById(plan)} variant="stranded" />
-        </section>
-
-        <div className="stranded-divider" role="separator" aria-hidden="true"><span>OR</span></div>
-
-        <section className="stranded-group" aria-labelledby="stranded-group-wait-title">
-          <p className="stranded-group-label" id="stranded-group-wait-title">WAIT SOMEWHERE NEARBY</p>
-          <SafeWaitPanel
-            status={safeWait.status === 'idle' ? 'loading' : safeWait.status}
-            best={safeWait.status === 'ready' ? safeWait.best : null}
-            alternates={safeWait.status === 'ready' ? safeWait.alternates : []}
-            errorMessage={safeWait.status === 'error' ? safeWait.message : undefined}
-            busyPlaceId={waitBusyPlaceId}
-            routeError={waitError}
-            onRouteHere={routeToWaitPlace}
-            onRetry={() => loadSafeWaitPlaces(location.coordinates)}
-          />
-        </section>
+        <StrandedResults
+          plan={plan}
+          origin={location.coordinates}
+          destination={destinationPlace ? { placeId: destinationPlace.placeId } : { address: destination.trim() }}
+          safePlaces={(
+            <SafePlaceRoutes
+              origin={location.coordinates}
+              status={safeWait.status === 'idle' ? 'loading' : safeWait.status}
+              best={safeWait.status === 'ready' ? safeWait.best : null}
+              alternates={safeWait.status === 'ready' ? safeWait.alternates : []}
+              errorMessage={safeWait.status === 'error' ? safeWait.message : undefined}
+              onRetry={() => loadSafeWaitPlaces(location.coordinates)}
+            />
+          )}
+        />
       </div>
     );
   }
@@ -241,47 +180,32 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
         </div>
         <button className="stranded-close" type="button" onClick={onExit} aria-label="Exit stranded mode">×</button>
       </header>
-
       <div className={`stranded-location-state ${location.status === 'error' ? 'is-error' : ''}`} role="status" aria-live="polite">
         {location.status === 'locating' && <><span className="planning-orb stranded-location-orb" aria-hidden="true"><span className="planning-orb-halo" /><span className="planning-orb-core" /><span className="planning-orb-glint" /></span>Getting your current location…</>}
         {location.status === 'ready' && <><span className="stranded-ready-dot" aria-hidden="true" /><span className="stranded-current-location">Current Location</span></>}
         {location.status === 'error' && <span role="alert">{location.message}</span>}
       </div>
-
-      {location.status === 'error' && (
-        <button className="stranded-retry" type="button" onClick={retryCurrentLocation}>
-          Try location again
-        </button>
-      )}
-
+      {location.status === 'error' && <button className="stranded-retry" type="button" onClick={retryCurrentLocation}>Try location again</button>}
       {location.status === 'ready' && (
         <form className="stranded-form" onSubmit={submitDestination}>
           <label className="stranded-field" htmlFor="stranded-destination">
             <span>Where do you need to get to?</span>
-            <input
-              id="stranded-destination"
-              autoComplete="street-address"
-              maxLength={300}
-              minLength={2}
-              placeholder="Enter a destination"
-              required
-              value={destination}
-              onChange={event => { setDestination(event.target.value); setError(''); }}
-            />
+            <input id="stranded-destination" autoComplete="street-address" maxLength={300} minLength={2} placeholder="Enter a destination" required value={destination} disabled={busy}
+              onChange={event => { setDestination(event.target.value); setDestinationPlace(null); setDestinationChoices([]); setError(''); }} />
           </label>
+          {destinationPlace && <p className="field-hint">{destinationPlace.name} · {destinationPlace.formattedAddress}</p>}
+          {destinationChoices.map(place => <button type="button" className="stranded-retry" key={place.placeId} onClick={() => { setDestinationPlace(place); setDestinationChoices([]); setError(''); }}>{place.name} · {place.formattedAddress}</button>)}
           {error && <p className="stranded-error" role="alert">{error}</p>}
-          {busy && (
-            <div className="stranded-location-state" role="status" aria-live="polite">
-              <span className="planning-orb stranded-location-orb" aria-hidden="true"><span className="planning-orb-halo" /><span className="planning-orb-core" /><span className="planning-orb-glint" /></span>
-              Calculating the fastest way out…
-            </div>
-          )}
+          {busy && <div className="stranded-location-state" role="status" aria-live="polite">
+            <span className="planning-orb stranded-location-orb" aria-hidden="true"><span className="planning-orb-halo" /><span className="planning-orb-core" /><span className="planning-orb-glint" /></span>
+            Calculating the fastest way out…
+          </div>}
           <button className="stranded-submit" type="submit" disabled={busy || destination.trim().length < 2}>
-            <span>{busy ? 'Please wait…' : 'Find My Way'}</span>
-            <span aria-hidden="true">↗</span>
+            <span>{busy ? 'Please wait…' : 'Find My Way'}</span><span aria-hidden="true">↗</span>
           </button>
         </form>
       )}
     </section>
   );
 }
+

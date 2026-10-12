@@ -1,4 +1,5 @@
 import RouteCard, { type RouteCardLabel } from '@/components/RouteCard';
+import LongDistanceResults from '@/components/LongDistanceResults';
 import RideshareOptions, { rideshareLabelsById } from '@/components/RideshareOptions';
 import type { Location, RouteOption, SuggestedStop, TripPlan } from '@/lib/types';
 
@@ -56,6 +57,7 @@ function globalWarnings(plan: TripPlan): string[] {
 }
 
 export default function RouteResults({ plan, origin, destination, onEditTrip, selectedStop }: RouteResultsProps) {
+  if (plan.tripScope === 'LONG_DISTANCE' && plan.longDistance) return <LongDistanceResults plan={plan} origin={origin} destination={destination} onEditTrip={onEditTrip} selectedStop={selectedStop} />;
 	const rankedRoutes = getRankedRoutes(plan);
 	const bestRoute = rankedRoutes.find(entry => entry.labels.includes('BEST'));
 	const otherRoutes = rankedRoutes.filter(entry => entry !== bestRoute);

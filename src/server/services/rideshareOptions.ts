@@ -110,7 +110,7 @@ function buildLyftOption(
   originLabel: string,
   destinationLabel: string,
 ): RideshareOption {
-  const fare = estimateRideshareFare('LYFT', facts.distanceMeters, facts.rideMinutes);
+  const fare = estimateRideshareFare('LYFT', facts.distanceMeters, facts.rideMinutes, { departureTime: request.departureTime, arrivalTime: request.arrivalTime, origin: facts.originCoordinates });
   const withinBudget = budgetStatus(request.maxRideshareBudget, fare?.low);
   const notes: string[] = [
     'Fare and pickup time are RouteWise estimates from trip distance and typical rates — not a live Lyft quote. Live pricing is shown in the Lyft app.',
@@ -118,6 +118,7 @@ function buildLyftOption(
   if (!fare || facts.rideMinutes === null) {
     notes.push('Price and ride-time estimates are unavailable for this trip.');
   }
+  if (fare) notes.push(fare.methodology);
   notes.push(...budgetNote(withinBudget, request.maxRideshareBudget));
 
   return {
@@ -163,17 +164,18 @@ function buildWaymoOption(
     };
   }
 
-  const fare = estimateRideshareFare('WAYMO', facts.distanceMeters, facts.rideMinutes);
+  const fare = estimateRideshareFare('WAYMO', facts.distanceMeters, facts.rideMinutes, { departureTime: request.departureTime, arrivalTime: request.arrivalTime, origin: facts.originCoordinates });
   const withinBudget = budgetStatus(request.maxRideshareBudget, fare?.low);
   const notes: string[] = [
     'Estimated fare is a RouteWise estimate from trip distance and typical reported Waymo rates — not a live Waymo quote.',
     availability.serviceAreaName
-      ? `Pickup and destination are inside the ${availability.serviceAreaName} service area (app-maintained zone data).`
+      ? `Pickup and destination match the ${availability.serviceAreaName} approximate service area. Confirm exact pickup support in the Waymo app.`
       : 'Service area match is based on app-maintained zone data.',
   ];
   if (!fare || facts.rideMinutes === null) {
     notes.push('Price and ride-time estimates are unavailable for this trip.');
   }
+  if (fare) notes.push(fare.methodology);
   notes.push(...budgetNote(withinBudget, request.maxRideshareBudget));
 
   return {
@@ -196,23 +198,20 @@ function buildWaymoOption(
   };
 }
 
-function buildUberOption(
-  facts: RideshareRouteFacts,
-  originLabel: string,
-  destinationLabel: string,
-): RideshareOption {
+function buildUberOption(request: TripRequest, facts: RideshareRouteFacts, originLabel: string, destinationLabel: string): RideshareOption {
+  const fare = estimateRideshareFare('UBER', facts.distanceMeters, facts.rideMinutes, { departureTime: request.departureTime, arrivalTime: request.arrivalTime, origin: facts.originCoordinates });
+  const withinBudget = budgetStatus(request.maxRideshareBudget, fare?.low);
   return {
-    id: 'rideshare-uber',
-    provider: 'UBER',
-    available: true,
-    priceSource: 'unavailable',
-    withinBudget: null,
-    origin: originLabel,
-    destination: destinationLabel,
-    ...(facts.originCoordinates
-      ? { bookingUrl: buildUberRideLink(facts.originCoordinates, destinationLabel) }
-      : {}),
-    notes: ['Exact pricing, vehicle availability, and pickup time are shown in the Uber app.'],
+    id: 'rideshare-uber', provider: 'UBER', available: true,
+    priceSource: fare ? 'estimate' : 'unavailable', withinBudget,
+    ...(fare ? { estimatedPriceLow: fare.low, estimatedPriceHigh: fare.high, currency: fare.currency } : {}),
+    estimatedPickupMinutes: TYPICAL_PICKUP_MINUTES.UBER,
+    ...(facts.rideMinutes !== null ? { estimatedRideMinutes: facts.rideMinutes, estimatedTotalMinutes: facts.rideMinutes + TYPICAL_PICKUP_MINUTES.UBER } : {}),
+    origin: originLabel, destination: destinationLabel,
+    ...(facts.originCoordinates ? { bookingUrl: buildUberRideLink(facts.originCoordinates, destinationLabel) } : {}),
+    notes: [fare ? fare.methodology : 'Price estimate unavailable without usable route facts.',
+      'Fare and pickup time are RouteWise planning estimates, not a live Uber quote. Confirm pricing and vehicle availability in the Uber app.',
+      ...budgetNote(withinBudget, request.maxRideshareBudget)],
   };
 }
 
@@ -234,7 +233,7 @@ export function buildRideshareOptions(
   for (const provider of requested) {
     if (provider === 'LYFT') options.push(buildLyftOption(request, facts, originLabel, destinationLabel));
     else if (provider === 'WAYMO') options.push(buildWaymoOption(request, facts, originLabel, destinationLabel));
-    else if (provider === 'UBER') options.push(buildUberOption(facts, originLabel, destinationLabel));
+    else if (provider === 'UBER') options.push(buildUberOption(request, facts, originLabel, destinationLabel));
   }
 
   if (hasSelectedStop) {

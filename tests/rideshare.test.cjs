@@ -30,8 +30,9 @@ const SAN_JOSE = { latitude: 37.3382, longitude: -121.8863 }; // outside every a
 const PHOENIX = { latitude: 33.4484, longitude: -112.074 };
 const DALLAS = { latitude: 32.7767, longitude: -96.797 }; // no Waymo area
 
-const factsInArea = { originCoordinates: SF, destinationCoordinates: PHOENIX, rideMinutes: 20, distanceMeters: 16093 };
-const baseRequest = { origin: SF, destination: PHOENIX };
+const SF_NEARBY = { latitude: 37.78, longitude: -122.40 };
+const factsInArea = { originCoordinates: SF, destinationCoordinates: SF_NEARBY, rideMinutes: 20, distanceMeters: 16093 };
+const baseRequest = { origin: SF, destination: SF_NEARBY };
 
 test('Waymo zone check: both points inside a supported area is available', () => {
   const result = checkWaymoAvailability(SF, PHOENIX);
@@ -85,7 +86,7 @@ test('fare estimates are labeled ranges and never zero-dollar', () => {
 test('fare estimate returns null without factual distance or duration', () => {
   assert.equal(estimateRideshareFare('LYFT', null, 20), null);
   assert.equal(estimateRideshareFare('LYFT', 16093, null), null);
-  assert.equal(estimateRideshareFare('UBER', 16093, 20), null);
+  assert.ok(estimateRideshareFare('UBER', 16093, 20).high > 0, 'Uber now has an explicit modeled range');
 });
 
 test('Lyft option carries labeled estimates, times, and an open action', () => {
@@ -164,7 +165,7 @@ const routeCandidate = (overrides = {}) => ({
 });
 const driveCandidate = {
   id: 'drive-1', travelMode: 'DRIVE', durationSeconds: 20 * 60, distanceMeters: 16093,
-  originCoordinates: SF, destinationCoordinates: PHOENIX, steps: [], warnings: [],
+  originCoordinates: SF, destinationCoordinates: SF_NEARBY, steps: [], warnings: [],
 };
 
 test('trip plan includes rideshares and a faster rideshare can win BEST and FASTEST deterministically', async () => {
@@ -182,10 +183,10 @@ test('trip plan includes rideshares and a faster rideshare can win BEST and FAST
 
 test('unavailable Waymo is never ranked and over-budget rideshares are excluded with a warning', async () => {
   const plan = await createTripPlan(
-    { origin: SF, destination: DALLAS, skip: true, maxRideshareBudget: 5 },
+    { origin: SF, destination: SAN_JOSE, skip: true, maxRideshareBudget: 5 },
     {
       getRoutes: async () => [routeCandidate()],
-      getRideshareRoute: async () => ({ ...driveCandidate, destinationCoordinates: DALLAS }),
+      getRideshareRoute: async () => ({ ...driveCandidate, destinationCoordinates: SAN_JOSE }),
       rankWithGemini: async () => null,
     },
   );
@@ -257,7 +258,7 @@ test('results rideshare section renders providers, estimates, and unavailable me
     labelsById: { 'rideshare-lyft': ['FASTEST'] },
   }));
   for (const text of ['Lyft', 'Waymo', 'Uber', 'Estimated fare', 'Open Lyft', 'Open Waymo', 'FASTEST',
-    'Waymo is unavailable for this trip', 'destination is outside', 'Price unavailable', 'min']) {
+    'Waymo is unavailable for this trip', 'destination is outside', 'Estimated fare', 'min']) {
     assert.ok(html.includes(text), `Missing ${text}`);
   }
 });
@@ -278,4 +279,128 @@ test('stranded variant keeps the unavailable Waymo tile and empty state', () => 
 test('results variant renders nothing when no providers are enabled', () => {
   const html = renderToStaticMarkup(React.createElement(RideshareOptions, { options: [] }));
   assert.equal(html, '');
+});
+
+const MIAMI = {
+  brickell: { latitude: 25.7601, longitude: -80.1958 },
+  worldcenter: { latitude: 25.7820, longitude: -80.1915 },
+  downtown: { latitude: 25.7743, longitude: -80.1937 },
+  wynwood: { latitude: 25.8010, longitude: -80.1994 },
+  designDistrict: { latitude: 25.8134, longitude: -80.1936 },
+  coralGables: { latitude: 25.7494, longitude: -80.2635 },
+};
+
+test('Miami core coverage is available with fallback confidence, without route-name exceptions', () => {
+  for (const [from, to] of [['brickell', 'worldcenter'], ['brickell', 'wynwood'], ['coralGables', 'brickell'], ['designDistrict', 'downtown']]) {
+    const result = checkWaymoAvailability(MIAMI[from], MIAMI[to]);
+    assert.equal(result.available, true, from + ' to ' + to);
+    assert.equal(result.confidence, 'FALLBACK');
+    const [option] = buildRideshareOptions({ origin: MIAMI[from], destination: MIAMI[to], rideshareProviders: ['WAYMO'] },
+      { originCoordinates: MIAMI[from], destinationCoordinates: MIAMI[to], rideMinutes: 15, distanceMeters: 5000 });
+    assert.equal(option.available, true);
+    assert.ok(option.notes.some(note => /approximate service area/.test(note)));
+  }
+});
+
+test('Miami fallback excludes outer county and invalid geocodes remain unverifiable', () => {
+  for (const outside of [{ latitude: 25.47, longitude: -80.47 }, { latitude: 26.12, longitude: -80.14 }, { latitude: 25.7959, longitude: -80.287 }]) {
+    assert.equal(checkWaymoAvailability(MIAMI.brickell, outside).reason, 'DESTINATION_OUTSIDE');
+    assert.equal(checkWaymoAvailability(outside, MIAMI.brickell).reason, 'ORIGIN_OUTSIDE');
+  }
+  for (const invalid of [null, { latitude: NaN, longitude: -80.2 }, { latitude: 91, longitude: -80.2 }]) {
+    assert.equal(checkWaymoAvailability(invalid, MIAMI.brickell).reason, 'UNVERIFIABLE');
+  }
+});
+
+test('Waymo diagnostics include only coordinate/service decisions and run only in development', () => {
+  const oldEnv = process.env.NODE_ENV, oldDebug = console.debug;
+  const logs = [];
+  console.debug = (...args) => logs.push(args);
+  try {
+    process.env.NODE_ENV = 'production';
+    checkWaymoAvailability(MIAMI.brickell, MIAMI.worldcenter);
+    assert.equal(logs.length, 0);
+    process.env.NODE_ENV = 'development';
+    checkWaymoAvailability(MIAMI.brickell, MIAMI.worldcenter);
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0][1].origin.city, 'Miami');
+    assert.equal(logs[0][1].origin.fallbackMatch, true);
+    assert.equal(logs[0][1].available, true);
+  } finally {
+    if (oldEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = oldEnv;
+    console.debug = oldDebug;
+  }
+});
+
+const StrandedResults = require('../src/components/StrandedResults.tsx').default;
+const SafeWaitPanel = require('../src/components/SafeWaitPanel.tsx').default;
+
+test('Stranded results contain one rideshare block, three real waiting cards, then transit and walking', () => {
+  const place = id => ({ placeId: id, name: 'Wait place ' + id, category: 'pharmacy', distanceMeters: 200, walkingMinutes: 4, rating: 4, openNow: true, address: 'Main St' });
+  const safePlaces = React.createElement(SafeWaitPanel, { status: 'ready', best: place('1'), alternates: [place('2'), place('3'), place('4')], busyPlaceId: null, routeError: '', onRouteHere() {}, onRetry() {} });
+  const plan = { routes: [], rideshares: buildRideshareOptions(baseRequest, factsInArea), best: null, fastest: null, cheapest: null, warnings: [] };
+  const html = renderToStaticMarkup(React.createElement(StrandedResults, { plan, origin: SF, destination: PHOENIX, safePlaces }));
+  assert.equal((html.match(/id="rideshare-title"/g) || []).length, 1);
+  assert.equal(html.includes('rideshare-options-heading'), false);
+  const headings = ['rideshare-title', 'safe-wait-title', 'stranded-TRANSIT-title', 'stranded-WALK-title'].map(id => html.indexOf('id="' + id + '"'));
+  assert.ok(headings.every((position, i) => position >= 0 && (i === 0 || position > headings[i - 1])));
+  assert.equal((html.match(/<article class="safe-wait-card/g) || []).length, 3);
+  assert.equal(html.includes('Wait place 4'), false);
+});
+
+
+test('Tampa is ACTIVE and actual app-resolved central Tampa endpoints use fallback coverage', () => {
+  const { WAYMO_SERVICE_AREAS } = require('../src/server/services/waymoAvailability.ts');
+  assert.equal(WAYMO_SERVICE_AREAS.find(area => area.city === 'Tampa').status, 'ACTIVE');
+  const fixture = require('./tampa-route-coordinates.json');
+  for (const route of fixture.routes) {
+    const result = checkWaymoAvailability(route.originCoordinates, route.destinationCoordinates);
+    assert.equal(result.available, true, route.origin + ' to ' + route.destination);
+    assert.equal(result.citySupported, true);
+    assert.equal(result.originInServiceArea, true);
+    assert.equal(result.confidence, 'FALLBACK');
+  }
+  for (const endpoint of [{ latitude: 27.77, longitude: -82.64 }, { latitude: 28.23, longitude: -82.46 }]) {
+    assert.equal(checkWaymoAvailability(fixture.routes[0].originCoordinates, endpoint).reason, 'DESTINATION_OUTSIDE');
+  }
+});
+
+test('active city with incomplete zone data is unverifiable, while reliable and stale polygons stay distinct', () => {
+  const { WAYMO_SERVICE_AREAS } = require('../src/server/services/waymoAvailability.ts');
+  const tampa = WAYMO_SERVICE_AREAS.find(area => area.city === 'Tampa');
+  const core = { latitude: 27.95, longitude: -82.45 };
+  const unknown = checkWaymoAvailability(core, { latitude: 28.06, longitude: -82.45 });
+  assert.equal(unknown.available, false);
+  assert.equal(unknown.citySupported, true);
+  assert.equal(unknown.destinationInServiceArea, 'UNKNOWN');
+  assert.equal(unknown.reason, 'UNVERIFIABLE');
+  assert.equal(unknown.confidence, 'UNKNOWN');
+  assert.match(unknown.detail, /Availability could not be verified/);
+  const polygon = { reliable: true, points: [
+    { latitude: 27.94, longitude: -82.46 }, { latitude: 27.96, longitude: -82.46 },
+    { latitude: 27.96, longitude: -82.44 }, { latitude: 27.94, longitude: -82.44 },
+  ] };
+  const exactArea = { ...tampa, polygons: [polygon] };
+  assert.equal(checkWaymoAvailability(core, core, [exactArea]).confidence, 'HIGH');
+  const outside = { latitude: 27.97, longitude: -82.45 };
+  assert.equal(checkWaymoAvailability(core, outside, [exactArea]).reason, 'DESTINATION_OUTSIDE');
+  assert.equal(checkWaymoAvailability(core, outside, [{ ...exactArea, polygons: [{ ...polygon, reliable: false }] }]).available, true);
+  const missingGeometry = { ...tampa, fallbackBounds: undefined };
+  assert.equal(checkWaymoAvailability(core, core, [missingGeometry]).reason, 'UNVERIFIABLE');
+});
+
+test('stranded route cards use an explicit dark theme while normal cards keep their default theme', () => {
+  const RouteCard = require('../src/components/RouteCard.tsx').default;
+  for (const mode of ['WALK', 'TRANSIT']) {
+    const route = { id: 'theme-' + mode, mode, label: mode, durationMinutes: 20, walkingMinutes: 5, distanceMeters: 2000,
+      cost: { amount: null, currency: 'USD', complete: false, note: '' }, steps: [], warnings: ['Check current conditions.'] };
+    const props = { route, origin: SF, destination: PHOENIX };
+    const stranded = renderToStaticMarkup(React.createElement(RouteCard, { ...props, variant: 'stranded' }));
+    const normal = renderToStaticMarkup(React.createElement(RouteCard, props));
+    assert.match(stranded, /<article class="[^"]*stranded-route-card/);
+    assert.doesNotMatch(stranded, /<article class="[^"]*bg-white/);
+    assert.match(normal, /<article class="[^"]*bg-white/);
+    assert.doesNotMatch(normal, /stranded-route-card/);
+    assert.ok(stranded.includes('Map preview'), 'nested map fallback remains available');
+  }
 });

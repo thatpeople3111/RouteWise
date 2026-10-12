@@ -1,8 +1,10 @@
+import { fareSchema } from './pricing';
 import { z } from 'zod';
 import type { FinalTripRequest, SuggestedPlaceCandidate, SuggestedStopCategory, SuggestStopsRequest } from './api-types';
 import type { RouteOption, SuggestedStop, TripInput, TripPlan } from './types';
 import type { StopPreferenceSubmission } from '../components/StopPreferences';
 import { rideshareOptionSchema, routeSchema } from './view-contracts';
+import { longDistanceSchema } from './longDistance';
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
 const nonnegative = z.number().nonnegative();
@@ -33,6 +35,7 @@ const suggestionsSchema = z.object({
 const mode = z.enum(['DRIVE', 'TRANSIT', 'WALK', 'BICYCLE']);
 const constraint = z.enum(['met', 'exceeded', 'unknown', 'not_requested']);
 const parkingLocationSchema = z.object({
+  fare: fareSchema.optional(),
   placeId: z.string(), name: z.string(), address: z.string().nullable(),
   coordinates: z.object({ latitude: z.number(), longitude: z.number() }),
   distanceMeters: nonnegative,
@@ -50,6 +53,7 @@ const availabilitySchema = z.object({
   message: z.string().optional(),
 });
 const transitAlternativeSchema = z.object({
+  fare: fareSchema.optional(),
   id: z.string(),
   title: z.string(),
   durationMinutes: nonnegative,
@@ -77,13 +81,15 @@ const transitAlternativeSchema = z.object({
   warnings: z.array(z.string()),
 });
 const planSchema = z.object({
+  tripScope: z.enum(['LOCAL', 'LONG_DISTANCE']).optional(),
+  longDistance: longDistanceSchema.optional(),
   id: z.string(), generatedAt: z.string(), dataMode: z.literal('live'),
   routeOptions: z.array(z.object({
     tolls: routeSchema.shape.tolls,
     parking: z.object({ status: z.enum(['available', 'none', 'unavailable']), locations: z.array(parkingLocationSchema) }).optional(),
     availability: availabilitySchema.optional(),
     originCoordinates: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
-    id: z.string(), mode, durationMinutes: nonnegative, distanceMeters: nonnegative,
+    fare: fareSchema.optional(), id: z.string(), mode, durationMinutes: nonnegative, distanceMeters: nonnegative,
     encodedPolyline: z.string().nullable().optional(),
     walkingMinutes: nonnegative.nullable(), extraStopMinutes: nonnegative.nullable(),
     transitAlternatives: z.array(transitAlternativeSchema).optional(),
@@ -109,6 +115,7 @@ const planSchema = z.object({
   rideshares: z.array(rideshareOptionSchema).optional(),
   recommendationSource: z.enum(['gemini', 'rules']), warnings: z.array(z.string()),
 }).superRefine((plan, ctx) => {
+  if (plan.tripScope === 'LONG_DISTANCE' && !plan.longDistance) ctx.addIssue({ code: 'custom', message: 'Long-distance journey data is missing.' });
   const ids = new Set([...plan.routeOptions.map(route => route.id), ...(plan.rideshares ?? []).map(option => option.id)]);
   if (new Set(plan.routeOptions.map(route => route.id)).size !== plan.routeOptions.length
     || Object.values(plan.rankings).some(id => id !== null && !ids.has(id))) {
@@ -144,6 +151,13 @@ export function buildSuggestRequest(trip: TripInput, preference: Exclude<StopPre
     ...(preference.maxExtraMinutes !== undefined ? { maxExtraMinutes: preference.maxExtraMinutes } : {}),
     ...(preference.maxExtraBudget !== undefined ? { maxExtraBudget: preference.maxExtraBudget } : {}),
   };
+}
+
+const resolvedPlaceSchema = z.object({ placeId: z.string(), name: z.string(), formattedAddress: z.string(),
+  coordinates: z.object({ latitude: z.number(), longitude: z.number() }), distanceMeters: z.number().optional() });
+export async function resolveLocation(query: string, bias?: { latitude: number; longitude: number }) {
+  return post('resolve-location', { query, ...(bias ? { bias } : {}) }, z.object({ resolved: z.boolean(),
+    place: resolvedPlaceSchema.nullable(), alternatives: z.array(resolvedPlaceSchema), confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']) }));
 }
 
 const supportedStopCategories: readonly SuggestedStopCategory[] = [
@@ -193,7 +207,7 @@ export function toTripPlan(payload: unknown, includesStop = false): TripPlan {
   const plan = planSchema.parse(payload);
   const labels = { DRIVE: 'Driving', TRANSIT: 'Public transit', WALK: 'Walking', BICYCLE: 'Cycling' };
   const routes: RouteOption[] = plan.routeOptions.map(route => ({
-    tolls: route.tolls, parking: route.parking,
+    tolls: route.tolls, parking: route.parking, fare: route.fare,
     id: route.id, mode: route.mode, label: labels[route.mode], durationMinutes: route.durationMinutes,
     distanceMeters: route.distanceMeters, walkingMinutes: route.walkingMinutes,
     includesStop, extraStopMinutes: route.extraStopMinutes,
@@ -219,7 +233,7 @@ export function toTripPlan(payload: unknown, includesStop = false): TripPlan {
         agencyName: step.transit.agencyName ?? null, stopCount: step.transit.stopCount ?? null, agencies: [] } : null,
     })),
     transitAlternatives: route.transitAlternatives?.map(alt => ({
-      id: alt.id, title: alt.title, durationMinutes: alt.durationMinutes, distanceMeters: alt.distanceMeters,
+      fare: alt.fare, id: alt.id, title: alt.title, durationMinutes: alt.durationMinutes, distanceMeters: alt.distanceMeters,
       walkingMinutes: alt.walkingMinutes,
       estimatedTransportationCost: alt.estimatedTransportationCost,
       encodedPolyline: alt.encodedPolyline,
@@ -239,6 +253,7 @@ export function toTripPlan(payload: unknown, includesStop = false): TripPlan {
     warnings: route.warnings,
   }));
   return { id: plan.id, generatedAt: plan.generatedAt, dataMode: plan.dataMode, routes,
+    tripScope: plan.tripScope ?? 'LOCAL', longDistance: plan.longDistance,
     ...plan.rankings, rideshares: plan.rideshares ?? [], recommendation: { source: plan.recommendationSource,
       reason: plan.recommendationSource === 'gemini' ? 'Gemini ranked the eligible routes using the supplied travel facts and preferences.' : 'Ranked using available route times, walking estimates, and transportation costs.' },
     nearby: [], groundedGuidance: null,

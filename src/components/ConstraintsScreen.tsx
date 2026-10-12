@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import type { RideshareProvider } from '@/lib/types';
 import type { TripDraft } from '@/lib/tripDraft';
+import SliderNumberInput from '@/components/SliderNumberInput';
 
 type ConstraintsScreenProps = {
 	draft: TripDraft;
@@ -11,24 +12,8 @@ type ConstraintsScreenProps = {
 	onStart: () => void;
 };
 
-type RideshareBudgetChoice = 'none' | '15' | '25' | '40' | 'custom';
-
-function rideshareBudgetChoice(draft: TripDraft): RideshareBudgetChoice {
-	if (draft.maxRideshareBudget === undefined) return 'none';
-	if (draft.maxRideshareBudget === 15) return '15';
-	if (draft.maxRideshareBudget === 25) return '25';
-	if (draft.maxRideshareBudget === 40) return '40';
-	return 'custom';
-}
-
 export default function ConstraintsScreen({ draft, onChange, onBack, onStart }: ConstraintsScreenProps) {
 	const [error, setError] = useState('');
-	const [customRideshareBudget, setCustomRideshareBudget] = useState(
-		draft.maxRideshareBudget !== undefined && ![15, 25, 40].includes(draft.maxRideshareBudget)
-			? String(draft.maxRideshareBudget)
-			: '',
-	);
-	const budgetChoice = rideshareBudgetChoice(draft);
 
 	function setProvider(provider: RideshareProvider, enabled: boolean) {
 		const next = enabled
@@ -44,17 +29,12 @@ export default function ConstraintsScreen({ draft, onChange, onBack, onStart }: 
 			setError('Enter a trip budget between $0 and $1000.');
 			return;
 		}
-		if (budgetChoice === 'custom') {
-			const customAmount = Number(customRideshareBudget);
-			if (!Number.isFinite(customAmount) || customAmount < 0 || customAmount > 1000) {
-				setError('Enter a custom rideshare budget between $0 and $1000.');
-				return;
-			}
+		if (draft.maxRideshareBudget !== undefined && (!Number.isFinite(draft.maxRideshareBudget) || draft.maxRideshareBudget < 0 || draft.maxRideshareBudget > 1000)) {
+			setError('Enter a rideshare budget between $0 and $1000.'); return;
 		}
 		onStart();
 	}
 
-	const walkingOptions = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180];
 
 	return (
 		<div className="planner-layout">
@@ -69,6 +49,7 @@ export default function ConstraintsScreen({ draft, onChange, onBack, onStart }: 
 						<span className="step-count">Step 2 <span>/ 2</span></span>
 					</div>
 					<p className="step-progress" aria-hidden="true"><span className="step-dot" /> Trip details <span className="step-sep">→</span> <span className="step-dot is-active" /> Preferences</p>
+					{draft.destinationPlace && <p className="field-hint">Destination: <strong>{draft.destinationPlace.name}</strong> · {draft.destinationPlace.formattedAddress}</p>}
 
 					<section className="form-section preferences-section" aria-labelledby="preferences-title">
 						<div className="section-heading">
@@ -76,32 +57,12 @@ export default function ConstraintsScreen({ draft, onChange, onBack, onStart }: 
 							<h3 id="preferences-title">Budget and walking</h3>
 						</div>
 						<div className="preference-grid">
-							<label className="field">
-								<span className="field-label">Trip budget</span>
-								<span className="number-input">
-									<span aria-hidden="true">$</span>
-									<input
-										type="number" min="0" max="1000" step="0.01"
-										value={String(draft.budgetUsd)}
-										onChange={event => onChange({ budgetUsd: Number(event.target.value) })}
-										required
-									/>
-								</span>
-								<span className="field-hint">USD, including transit fare</span>
-							</label>
-							<label className="field">
-								<span className="field-label">Maximum walking</span>
-								<select
-									disabled={!draft.allowWalking}
-									value={draft.allowWalking ? String(draft.maxWalkingMinutes) : '0'}
-									onChange={event => onChange({ maxWalkingMinutes: Number(event.target.value) })}
-								>
-									{walkingOptions.map(minutes => (
-										<option key={minutes} value={String(minutes)}>{minutes === 0 ? 'No walking' : `${minutes} minutes`}</option>
-									))}
-								</select>
-								<span className="field-hint">{draft.allowWalking ? 'Total walking along the route' : 'No walking: routes must have zero walking minutes.'}</span>
-							</label>
+                            <SliderNumberInput label="Trip budget" value={draft.budgetUsd} min={0} max={1000} sliderMax={200} prefix="$"
+                              hint="USD, including transit fare. Type amounts up to $1000."
+                              onChange={value => { if (value !== undefined) onChange({ budgetUsd: value }); }} />
+                            <SliderNumberInput label="Maximum walking time" value={draft.allowWalking ? draft.maxWalkingMinutes : 0} min={0} max={180} unit="min" disabled={!draft.allowWalking}
+                              hint={draft.allowWalking ? 'Total walking along the route.' : 'No walking: routes must have zero walking minutes.'}
+                              onChange={value => { if (value !== undefined) onChange({ maxWalkingMinutes: value }); }} />
 						</div>
 					</section>
 
@@ -165,33 +126,9 @@ export default function ConstraintsScreen({ draft, onChange, onBack, onStart }: 
 								</div>
 								<span className="field-hint">Show these ride options alongside your routes. Unavailable providers stay visible with the reason.</span>
 							</fieldset>
-							<label className="field">
-								<span className="field-label">Maximum rideshare price</span>
-								<select
-									value={budgetChoice}
-									onChange={event => {
-										const choice = event.target.value as RideshareBudgetChoice;
-										onChange({ maxRideshareBudget: choice === 'none' ? undefined : choice === 'custom' ? draft.maxRideshareBudget : Number(choice) });
-									}}
-								>
-									<option value="none">No rideshare budget</option>
-									<option value="15">Under $15</option>
-									<option value="25">Under $25</option>
-									<option value="40">Under $40</option>
-									<option value="custom">Custom</option>
-								</select>
-								<span className="field-hint">Separate from your overall trip budget and any optional-stop budget.</span>
-							</label>
-							{budgetChoice === 'custom' && (
-								<label className="field">
-									<span className="field-label">Custom rideshare budget</span>
-									<span className="number-input">
-										<span aria-hidden="true">$</span>
-										<input type="number" min="0" max="1000" step="0.01" value={customRideshareBudget} onChange={event => setCustomRideshareBudget(event.target.value)} required />
-									</span>
-									<span className="field-hint">USD, rideshares only</span>
-								</label>
-							)}
+                            <SliderNumberInput label="Maximum rideshare price" value={draft.maxRideshareBudget} min={0} max={1000} sliderMax={200} prefix="$" optional
+                              hint="Separate from your trip and stop budgets. Type amounts up to $1000."
+                              onChange={value => onChange({ maxRideshareBudget: value })} />
 						</div>
 					</section>
 

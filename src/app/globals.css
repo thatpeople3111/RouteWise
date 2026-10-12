@@ -1483,6 +1483,43 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
 .rideshare-option-lyft .rideshare-option-mark { background: rgba(255, 0, 191, 0.16); color: #ff7ae0; border: 1px solid rgba(255, 0, 191, 0.5); }
 .rideshare-option-waymo .rideshare-option-mark { background: rgba(91, 140, 255, 0.16); color: #9cc5ff; border: 1px solid rgba(91, 140, 255, 0.5); }
 .rideshare-option-uber .rideshare-option-mark { background: rgba(231, 238, 251, 0.1); color: #e7eefb; border: 1px solid rgba(231, 238, 251, 0.4); }
+.rideshare-provider-logo { width: 26px; height: 26px; object-fit: contain; border-radius: 4px; }
+
+.slider-number-control { display: grid; gap: 8px; min-width: 0; }
+.slider-number-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.slider-number-range { flex: 1 1 0; width: 100%; min-width: 0; min-height: 44px; accent-color: #64a3ff; cursor: pointer; }
+.slider-number-value { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; color: #9badc5; }
+.slider-number-value input { width: 90px; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid #263750; border-radius: 6px; background: #111d30; color: #e7eefb; font: inherit; }
+.slider-number-control .field-label { color: #e7eefb; }
+.slider-number-control .field-hint { margin: 0; color: #9badc5; }
+.slider-number-range:focus-visible, .slider-number-value input:focus-visible { outline: 2px solid #64a3ff; outline-offset: 3px; }
+.slider-number-value input[aria-invalid="true"] { border-color: #ff7276; }
+.slider-number-control input:disabled { opacity: 0.5; cursor: not-allowed; }
+.long-distance-results { display: grid; gap: 28px; color: #e7eefb; }
+.long-distance-results h1 { font-size: 28px; font-weight: 600; }
+.long-distance-results h2 { margin-bottom: 12px; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; }
+.long-distance-results h3 { font-size: 17px; font-weight: 600; }
+.long-distance-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.long-distance-card { display: grid; align-content: start; gap: 14px; min-width: 0; padding: 20px; border: 1px solid #263750; border-radius: 8px; background: #111d30; }
+.long-distance-logo { width: 34px; height: 34px; object-fit: contain; border-radius: 4px; flex-shrink: 0; }
+.long-distance-total { font-size: 22px; font-weight: 600; }
+.long-distance-total small { display: block; font-size: 12px; font-weight: 400; color: #9badc5; }
+.long-distance-segments { display: grid; gap: 8px; font-size: 13px; }
+.long-distance-cost { margin-top: 12px; padding: 14px; border: 1px solid #263750; border-radius: 6px; background: #111d30; }
+.long-distance-cost dl { display: grid; gap: 8px; }
+.long-distance-cost dl > div { display: flex; gap: 12px; justify-content: space-between; flex-wrap: wrap; }
+.long-distance-cost small, .long-distance-notes { color: #9badc5; font-size: 12px; }
+.long-distance-cost > p { margin-top: 12px; font-weight: 600; }
+.long-distance-rentals { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.long-distance-badge { padding: 4px 8px; border-radius: 4px; color: #c4dcff; background: #193658; font-size: 11px; font-weight: 700; }
+.long-distance-results .rideshare-grid { grid-template-columns: minmax(0, 1fr); }
+.long-distance-results summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 700px) { .long-distance-rentals { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 420px) {
+  .slider-number-row { flex-wrap: wrap; }
+  .slider-number-range { flex-basis: 100%; }
+  .slider-number-value { max-width: 100%; }
+}
 .rideshare-option-name { margin: 0; font-size: 15px; font-weight: 700; color: #e7eefb; }
 .rideshare-option-vehicle { margin: 2px 0 0; font-size: 11px; color: #9badc5; }
 
@@ -1517,7 +1554,7 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
 
 /* Unavailable cards stay visible and readable, but are clearly not selectable. */
 .rideshare-option-card.is-unavailable { border-style: dashed; background: rgba(17, 29, 48, 0.55); }
-.rideshare-option-card.is-unavailable .rideshare-option-mark { opacity: 0.55; }
+.rideshare-option-card.is-unavailable .rideshare-option-mark { opacity: 1; }
 .rideshare-option-unavailable { margin: 0; font-size: 13px; font-weight: 700; color: #dce7f8; }
 .rideshare-option-unavailable-detail { margin: 0; font-size: 12px; line-height: 1.5; color: #9badc5; }
 
@@ -1869,3 +1906,67 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
   .transit-tab-bar { flex-direction: column; }
   .transit-tab { width: 100%; }
 }
+
+/* Stranded-only priority layout. Normal result cards keep their existing layout. */
+.stranded-priority-results { display: grid; gap: 24px; min-width: 0; }
+.stranded-priority-results .safe-wait-list { grid-template-columns: minmax(0, 1fr); }
+.stranded-priority-results .safe-wait-card { min-width: 0; align-content: start; }
+.stranded-priority-results .safe-wait-card h3,
+.stranded-priority-results .safe-wait-address { overflow-wrap: anywhere; }
+.stranded-priority-results .safe-wait-card-header { flex-wrap: wrap; }
+/* Match the existing stranded rideshare/safe-wait palette, including map fallbacks. */
+.stranded-route-card { background: #1b1b26; border-color: #45323a; color: #fff1f1; }
+.stranded-route-card [class*="text-[#192923]"],
+.stranded-route-card [class*="text-[#43534b]"] { color: #fff1f1; }
+.stranded-route-card [class*="text-[#68766f]"],
+.stranded-route-card [class*="text-[#87928a]"] { color: #c0aeb3; }
+.stranded-route-card [class*="border-[#dce5dc]"],
+.stranded-route-card [class*="border-[#e3eae3]"] { border-color: #45323a; }
+.stranded-route-card .map-compact,
+.stranded-route-card [class*="bg-[#edf3e9]"],
+.stranded-route-card [class*="bg-[#f8faf6]"],
+.stranded-route-card .bg-white { background: #1b1b26; }
+.stranded-route-card [class*="bg-[#fff9e9]"] { background: #2b2530; }
+.stranded-route-card [class*="text-[#715522]"] { color: #ffce8a; }
+.stranded-route-card > [aria-hidden="true"] { background: #ff686d; }
+.stranded-route-card [class*="bg-[#dce5dc]"] { background: #45323a; }
+.stranded-route-card .transit-tab,
+.stranded-route-card .transit-option-unavailable,
+.stranded-route-card .transit-warnings { background: #1b1b26; border-color: #45323a; }
+.stranded-route-card .transit-tab.is-selected { background: #201620; border-color: #ff686d; }
+.stranded-route-card .transit-tab-title,
+.stranded-route-card .transit-step-label { color: #fff1f1; }
+.stranded-route-card .transit-tab-sub,
+.stranded-route-card .transit-stop,
+.stranded-route-card .transit-option-summary { color: #c0aeb3; }
+.stranded-route-card .transit-step-time,
+.stranded-route-card .transit-transfer,
+.stranded-route-card .transit-tab-badge { color: #ff9fa1; }
+.stranded-route-card .transit-warnings,
+.stranded-route-card .transit-option-unavailable { color: #ffce8a; }
+@media (min-width: 900px) {
+  .stranded-priority-results .safe-wait-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stranded-route-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; }
+  .stranded-route-content > * { grid-column: 1; min-width: 0; }
+  .stranded-route-content > .stranded-route-map { grid-column: 2; grid-row: 1 / span 6; align-self: start; margin-top: 0; }
+  .stranded-route-content > .stranded-transit-content { grid-column: 1 / -1; }
+  .stranded-transit-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; }
+  .stranded-transit-content > * { grid-column: 1; min-width: 0; }
+  .stranded-transit-content > .transit-tab-bar { grid-column: 1 / -1; }
+  .stranded-transit-content > .mt-3 { grid-column: 2; grid-row: 2 / span 8; align-self: start; }
+}
+.safe-place-route { min-width: 0; display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid #45323a; }
+.safe-place-route h4, .safe-place-route p { margin: 0; }
+.safe-place-route h4 { color: #ff9fa1; font-size: 12px; letter-spacing: .08em; }
+.safe-place-route ol { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.safe-place-route .safe-place-attribution { font-size: 11px; color: #c0aeb3; }
+.stranded-priority-results .safe-wait-list { align-items: start; }
+.journey-ground { display: grid; gap: 12px; border-top: 1px solid #45323a; padding-top: 16px; min-width: 0; }
+.journey-ground h4, .journey-ground h5 { margin: 0; color: #ff9fa1; }
+.journey-ground .long-distance-rentals { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
+.fare-price { min-width: 0; display: grid; gap: 4px; }
+.fare-price .fare-price-value { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fare-price-source, .fare-price-status { margin: 0; font-size: 12px; line-height: 1.5; color: inherit; opacity: .8; }
+.rideshare-option-price-row .fare-price-value { font-size: 24px; }
+.fare-price details { font-size: 12px; line-height: 1.5; font-weight: 400; }
+.fare-price details summary { cursor: pointer; }

@@ -40,7 +40,8 @@ const OFFICIAL_FARE_CONFIG: ReadonlyArray<{ match: string } & AgencyFareEntry> =
   { match: 'metromover', name: 'Miami-Dade Metromover (free)', baseFareUsd: 0, region: MIAMI_DADE_REGION },
   { match: 'metrobus', name: 'Miami-Dade Metrobus', baseFareUsd: 2.25, region: MIAMI_DADE_REGION },
   { match: 'miami-dade', name: 'Miami-Dade Transit', baseFareUsd: 2.25, region: MIAMI_DADE_REGION },
-  { match: 'tri-rail', name: 'Tri-Rail', baseFareUsd: 5.0, region: { minLat: 25.7, maxLat: 27.0, minLng: -80.5, maxLng: -80.0 } },
+  // Tri-Rail requires station zones and a travel date. Do not apply a generic $5
+  // fare to weekday trips; pricing/railPricing supplies the maintained table.
 ];
 
 function inRegion(region: { minLat: number; maxLat: number; minLng: number; maxLng: number } | undefined, point: Coordinates | null | undefined): boolean {

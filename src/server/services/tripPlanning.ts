@@ -1,8 +1,13 @@
+import { normalizeKnownTransitFare } from '../pricing/knownFare';
+import { resolveRidesharePricing } from '../pricing/ridesharePricing';
+import { formatDuration } from '../utils/formatDuration';
 import type { FinalTripRequest, FinalTripSelectedStop, Location, RideshareOption, TransitAlternative, TripPlan, TripPlanRankings, TripPlanRouteOption, TripPlanStep } from '../types/index';
 import { getCandidateRoutes, getCandidateRoutesViaStop, getDirectDriveRoute, getWalkRoute, type GoogleRouteCandidate } from './maps';
 import { normalizeRouteCandidate, type CandidateRoute } from './routing';
 import { rankRoutesWithGemini } from './gemini';
 import { findDestinationParking } from './parking';
+import { determineTripScope } from './tripScope';
+import { createLongDistancePlan } from './longDistancePlanning';
 import { lookupTransitFare } from './transitFares';
 import {
   ALL_RIDESHARE_PROVIDERS,
@@ -168,7 +173,7 @@ function transitAltAvailability(
     return {
       available: false,
       reasonCode: 'WALKING_LIMIT_EXCEEDED',
-      message: `This option needs about ${Math.round(walkingMinutes)} minutes of walking, over your ${request.maxWalkingMinutes}-minute limit.`,
+      message: `This option needs about ${formatDuration(walkingMinutes)} of walking, over your ${formatDuration(request.maxWalkingMinutes)} limit.`,
     };
   }
   return undefined;
@@ -213,7 +218,7 @@ function routeAvailability(
       available: false,
       reasonCode: 'WALKING_LIMIT_EXCEEDED',
       message: route.walkingMinutes !== null && request.maxWalkingMinutes !== undefined
-        ? `This trip requires about ${Math.round(route.walkingMinutes)} minutes of walking, which exceeds your ${request.maxWalkingMinutes}-minute limit.`
+        ? `This trip requires about ${formatDuration(route.walkingMinutes)} of walking, which exceeds your ${request.maxWalkingMinutes}-minute limit.`
         : 'This route exceeds your walking limit.',
     };
   }
@@ -361,12 +366,45 @@ export async function createTripPlan(
   options: TripPlanningOptions = {},
 ): Promise<TripPlan> {
   const getRoutes = options.getRoutes ?? (trip => getCandidateRoutes(trip));
-  const baselineRoutes = await getRoutes(request);
+  let prefetchedDrive: GoogleRouteCandidate | null = null;
+  // Resolve scope before asking for walking/city-transit routes on production intercity requests.
+  // Local trips reuse this drive lookup rather than fetching it twice.
+  if (!options.getRoutes && !request.notes?.startsWith('RouteWise Stranded mode request')) {
+    try { prefetchedDrive = await getDirectDriveRoute(request); } catch { /* Existing local fallback still runs. */ }
+    const from = prefetchedDrive?.originCoordinates ?? ('latitude' in request.origin ? request.origin : null);
+    const to = prefetchedDrive?.destinationCoordinates ?? ('latitude' in request.destination ? request.destination : null);
+    if (from && to && determineTripScope(from, to, prefetchedDrive?.distanceMeters,
+      prefetchedDrive ? prefetchedDrive.durationSeconds / 60 : undefined) === 'LONG_DISTANCE') {
+      const original = prefetchedDrive ? [prefetchedDrive] : [];
+      const selected = request.skip ? undefined : request.selectedStop;
+      const stop = selected ? getSelectedStopLocation(selected) : null;
+      const withStop = stop ? await getCandidateRoutesViaStop({ ...request, hasCar: true, allowTransit: false, allowWalking: false }, stop) : original;
+      return createLongDistancePlan(request, from, to, original, withStop, { getParking: options.getParking });
+    }
+  }
+  const baselineRoutes = prefetchedDrive && request.hasCar
+    ? [prefetchedDrive, ...await getCandidateRoutes({ ...request, hasCar: false })]
+    : await getRoutes(request);
   const selectedStop = request.skip === true ? undefined : request.selectedStop;
   const stopLocation = selectedStop ? getSelectedStopLocation(selectedStop) : null;
   const rawRoutes = selectedStop && stopLocation
     ? await (options.getRoutesViaStop ?? ((trip, stop) => getCandidateRoutesViaStop(trip, stop)))(request, stopLocation)
     : baselineRoutes;
+
+  const scopeOrigin = baselineRoutes.find(route => route.originCoordinates)?.originCoordinates
+    ?? ('latitude' in request.origin ? request.origin : null);
+  const scopeDestination = baselineRoutes.find(route => route.destinationCoordinates)?.destinationCoordinates
+    ?? ('latitude' in request.destination ? request.destination : null);
+  const scopeDrive = baselineRoutes.find(route => route.travelMode === 'DRIVE');
+  if (!request.notes?.startsWith('RouteWise Stranded mode request') && scopeOrigin && scopeDestination
+    && determineTripScope(scopeOrigin, scopeDestination, scopeDrive?.distanceMeters,
+      scopeDrive ? scopeDrive.durationSeconds / 60 : undefined) === 'LONG_DISTANCE') {
+    return createLongDistancePlan(request, scopeOrigin, scopeDestination, baselineRoutes, rawRoutes, {
+      getDrive: options.getRideshareRoute,
+      getParking: options.getParking,
+      ...(options.getRoutesViaStop ? { getViaStop: async (trip, stop) => options.getRoutesViaStop!(trip, stop) } : {}),
+    });
+  }
 
   const purchaseEstimate = getPurchaseEstimate(selectedStop);
   const candidates: TripPlanRouteOption[] = [];
@@ -493,8 +531,9 @@ export async function createTripPlan(
   const requestedRideshareProviders = request.rideshareProviders ?? ALL_RIDESHARE_PROVIDERS;
   let rideshares: RideshareOption[] | undefined;
   if (requestedRideshareProviders.length > 0) {
-    const facts = await resolveRideshareFacts(request, baselineRoutes, options);
-    rideshares = buildRideshareOptions(request, facts);
+    const facts = await resolveRideshareFacts(request, baselineRoutes, prefetchedDrive && !options.getRideshareRoute
+      ? { ...options, getRideshareRoute: async () => prefetchedDrive } : options);
+    rideshares = await resolveRidesharePricing(request, facts, buildRideshareOptions(request, facts));
   }
   const rankableRideshares = (rideshares ?? []).filter(option =>
     isRideshareRankable(option, request.maxRideshareBudget));
@@ -562,6 +601,11 @@ export async function createTripPlan(
   }
   if (rankedRouteOptions.length > 0 && rankings.cheapest === null) {
     warnings.push('Cheapest route is unavailable because no comparable factual transportation cost was returned.');
+  }
+
+  for (const route of allDisplayRoutes) {
+    if (route.mode === 'TRANSIT') route.fare = normalizeKnownTransitFare(request, route.estimatedTransportationCost);
+    for (const alternative of route.transitAlternatives ?? []) alternative.fare = normalizeKnownTransitFare(request, alternative.estimatedTransportationCost);
   }
 
   return {

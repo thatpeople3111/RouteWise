@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { handlePlanTrip } from './routes/planTrip';
 import { handleSafeWait } from './routes/safeWait';
 import { handleSuggestStops } from './routes/suggestStops';
+import { handleResolveLocation } from './routes/resolveLocation';
 import { sendJson } from './utils/http';
 
 const port = Number(process.env.PORT ?? 4000);
@@ -44,6 +45,11 @@ async function handleRequest(
 
   if (request.method === 'GET' && request.url === '/health') {
     sendJson(response, 200, { status: 'ok', service: 'routewise-backend' });
+    return;
+  }
+
+  if (request.method === 'POST' && request.url === '/api/resolve-location') {
+    await handleResolveLocation(request, response);
     return;
   }
 

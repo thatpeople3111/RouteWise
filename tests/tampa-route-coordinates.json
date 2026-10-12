@@ -1,0 +1,30 @@
+{
+  "source": "Google Routes via existing app getDirectDriveRoute",
+  "retrievedAt": "2026-10-11T21:30:59.393Z",
+  "routes": [
+    {
+      "origin": "Downtown Tampa, FL",
+      "destination": "Channelside, Tampa, FL",
+      "originCoordinates": {
+        "latitude": 27.9494892,
+        "longitude": -82.4561961
+      },
+      "destinationCoordinates": {
+        "latitude": 27.9505494,
+        "longitude": -82.44684
+      }
+    },
+    {
+      "origin": "Ybor City, Tampa, FL",
+      "destination": "Hyde Park Village, Tampa, FL",
+      "originCoordinates": {
+        "latitude": 27.9703137,
+        "longitude": -82.42231
+      },
+      "destinationCoordinates": {
+        "latitude": 27.937142899999998,
+        "longitude": -82.4757992
+      }
+    }
+  ]
+}

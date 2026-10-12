@@ -1,3 +1,4 @@
+import { pricingService } from '../pricing/pricingService';
 import type { Coordinates, DestinationParking, ParkingLocation } from '../types/index';
 import type { PlacesServiceOptions } from './places';
 import { lookupParkingPrice } from './parkingPricing';
@@ -69,6 +70,7 @@ export async function findDestinationParking(
       location.priceAmount = price.priceAvailable ? price.amount ?? null : null;
       location.priceCurrency = 'USD';
       location.priceSource = price.source === 'official_config' ? 'official_config' : 'unavailable';
+      location.fare = await pricingService.getFare({ provider: 'PARKING', origin: destination, destination: location.coordinates, providerMetadata: { facilityName: location.name } });
     }
     return { status: locations.length ? 'available' : 'none', locations };
   } catch {

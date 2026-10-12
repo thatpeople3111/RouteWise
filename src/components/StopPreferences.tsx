@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import SliderNumberInput from '@/components/SliderNumberInput';
 import type { SuggestedStopCategory, SuggestedStopTiming } from '@/lib/types';
 import type { StopTimeOfDay } from '@/lib/api-types';
 
@@ -32,6 +33,7 @@ export type StopPreferenceSubmission =
 		};
 
 type StopPreferencesProps = {
+	onBack: () => void;
 	value: StopPreference | null;
 	availableCategories?: SuggestedStopCategory[];
 	recommendedCategories?: SuggestedStopCategory[];
@@ -45,10 +47,9 @@ const stopLocations: { id: StopLocation; label: string; description: string }[] 
 	{ id: 'DESTINATION', label: 'Near my destination', description: 'Look around where I am going' },
 ];
 
-const extraTimeChoices: (number | null)[] = [5, 10, 15, 20, null];
-
-export default function StopPreferences({ value, availableCategories, recommendedCategories, timeOfDay, onChange, onSubmit }: StopPreferencesProps) {
+export default function StopPreferences({ onBack, value, availableCategories, recommendedCategories, timeOfDay, onChange, onSubmit }: StopPreferencesProps) {
 	const [validationError, setValidationError] = useState('');
+	const sectionRef = useRef<HTMLElement>(null);
 	const recommendedOrder = (recommendedCategories ?? []).filter(category =>
 		!availableCategories?.length || availableCategories.includes(category),
 	);
@@ -58,6 +59,7 @@ export default function StopPreferences({ value, availableCategories, recommende
 	];
 
 	function findStop() {
+		if (sectionRef.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')) { setValidationError('Check the stop limits before searching.'); return; }
 		if (!value?.category) {
 			setValidationError('Choose a stop category to find a stop.');
 			return;
@@ -78,14 +80,14 @@ export default function StopPreferences({ value, availableCategories, recommende
 	}
 
 	return (
-		<section className="route-results p-5 sm:p-8" aria-labelledby="stop-preferences-title">
+		<section ref={sectionRef} className="route-results p-5 sm:p-8" aria-labelledby="stop-preferences-title">
 			<div className="mb-6 max-w-2xl">
 				<span className="eyebrow">OPTIONAL STOP</span>
 				<h2 id="stop-preferences-title" className="font-serif text-2xl font-medium leading-tight text-[#192923] sm:text-3xl">
-					Want to grab something along the way?
+					Choose your stop preferences
 				</h2>
 				<p id="stop-preferences-hint" className="mt-2 text-sm leading-6 text-[#68766f]">
-					Choose one category, or continue without adding a stop.
+					Choose a category and where to stop, then set any optional limits.
 				</p>
 				{timeOfDay && <p className="mt-2 text-xs text-[#68766f]">Priorities for {timeOfDay.toLowerCase().replace('_', ' ')} are shown first; all supported categories remain available.</p>}
 			</div>
@@ -162,60 +164,12 @@ export default function StopPreferences({ value, availableCategories, recommende
 
 			{value && (
 				<div className="mt-6 grid gap-6 border-t border-[#dce5dc] pt-5 sm:grid-cols-2 sm:gap-8">
-					<fieldset aria-describedby="extra-time-hint">
-						<legend className="text-sm font-semibold text-[#192923]">How much extra time is okay?</legend>
-						<p id="extra-time-hint" className="mb-3 mt-1 text-xs leading-5 text-[#68766f]">
-							Additional time caused by this stop, not your total trip duration.
-						</p>
-						<div className="grid grid-cols-3 gap-2 sm:grid-cols-2 lg:grid-cols-3" role="group" aria-label="Maximum extra stop time">
-							{extraTimeChoices.map(minutes => {
-								const selected = value.maxExtraTimeMinutes === minutes;
-								const label = minutes === null ? 'No limit' : `${minutes} min`;
-								return (
-									<button
-										key={label}
-										type="button"
-										aria-pressed={selected}
-										onClick={() => onChange({ ...value, maxExtraTimeMinutes: minutes })}
-										className={`min-h-11 rounded-md border px-3 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e77958] ${selected ? 'border-[#24634d] bg-[#edf3e9] text-[#194b3a] ring-1 ring-[#24634d]' : 'border-[#dce5dc] bg-white text-[#43534b] hover:border-[#24634d]/50 hover:bg-[#f8faf6]'}`}
-									>
-										{label}
-									</button>
-								);
-							})}
-						</div>
-					</fieldset>
-
-					<fieldset>
-						<legend className="text-sm font-semibold text-[#192923]">Maximum extra spending</legend>
-						<label className="mt-1 block text-xs leading-5 text-[#68766f]" htmlFor="extra-stop-spending">
-							Optional limit for extra travel and spending at this stop.
-						</label>
-						<div className="mt-3 flex h-11 items-center rounded-md border border-[#dce5dc] bg-white focus-within:border-[#24634d] focus-within:ring-2 focus-within:ring-[#24634d]/15">
-							<span className="pl-3 text-sm text-[#68766f]" aria-hidden="true">$</span>
-							<input
-								id="extra-stop-spending"
-								className="h-full min-w-0 flex-1 rounded-md bg-transparent px-2 text-sm text-[#192923] outline-none"
-								aria-label="Maximum extra spending for the stop in dollars"
-								type="number"
-								min="0"
-								step="0.01"
-								inputMode="decimal"
-								placeholder="No limit"
-								value={value.maxExtraSpendingUsd ?? ''}
-								onChange={event => {
-									const rawValue = event.currentTarget.value;
-									if (rawValue === '') {
-										onChange({ ...value, maxExtraSpendingUsd: null });
-										return;
-									}
-									const amount = Number(rawValue);
-									if (Number.isFinite(amount)) onChange({ ...value, maxExtraSpendingUsd: Math.max(0, amount) });
-								}}
-							/>
-						</div>
-						<p className="mt-2 text-xs text-[#68766f]">Stops with unknown costs may be excluded when a limit is set.</p>
-					</fieldset>
+                    <SliderNumberInput label="Maximum added time" value={value.maxExtraTimeMinutes ?? undefined} min={0} max={Number.MAX_SAFE_INTEGER} sliderMax={60} unit="min" optional
+                      hint="Extra travel caused by this stop. Type a larger limit if needed."
+                      onChange={minutes => onChange({ ...value, maxExtraTimeMinutes: minutes ?? null })} />
+                    <SliderNumberInput label="Maximum extra spending" value={value.maxExtraSpendingUsd ?? undefined} min={0} max={Number.MAX_SAFE_INTEGER} sliderMax={100} prefix="$" optional
+                      hint="Extra travel and spending at this stop. Unknown costs remain unverified."
+                      onChange={amount => onChange({ ...value, maxExtraSpendingUsd: amount ?? null })} />
 				</div>
 			)}
 
@@ -226,18 +180,18 @@ export default function StopPreferences({ value, availableCategories, recommende
 					type="button"
 					onClick={() => {
 						setValidationError('');
-						onSubmit({ skip: true });
+						onBack();
 					}}
 					className="min-h-11 rounded-md border border-[#dce5dc] bg-white px-4 py-2 text-sm font-semibold text-[#43534b] transition-colors hover:border-[#24634d]/50 hover:bg-[#f8faf6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e77958]"
 				>
-					No thanks — continue
+					Back
 				</button>
 				<button
 					type="button"
 					onClick={findStop}
 					className="submit-button min-h-11"
 				>
-					<span>Find a stop</span>
+					<span>Find stops</span>
 					<span aria-hidden="true">↗</span>
 				</button>
 			</div>

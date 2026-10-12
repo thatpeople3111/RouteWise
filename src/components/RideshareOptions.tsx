@@ -31,7 +31,7 @@ export function rideshareLabelsById(
  * Renders the backend-supplied rideshare options for a trip. Available providers show estimated
  * price/time plus an open-provider action; unavailable providers stay visible with the reason.
  */
-export default function RideshareOptions({ options, labelsById = {}, variant = 'results' }: RideshareOptionsProps) {
+export default function RideshareOptions({ options, labelsById = {}, variant = 'results', headingId = 'rideshare-options-heading' }: RideshareOptionsProps & { headingId?: string }) {
   if (variant === 'stranded') {
     return (
       <section className="rideshare-panel" aria-labelledby="rideshare-title">
@@ -61,8 +61,8 @@ export default function RideshareOptions({ options, labelsById = {}, variant = '
   if (options.length === 0) return null;
 
   return (
-    <section className="rideshare-section" aria-labelledby="rideshare-options-heading">
-      <h2 id="rideshare-options-heading" className="text-xs font-bold uppercase tracking-wide text-[#68766f]">Rideshare options</h2>
+    <section className="rideshare-section" aria-labelledby={headingId}>
+      <h2 id={headingId} className="text-xs font-bold uppercase tracking-wide text-[#68766f]">Rideshare options</h2>
       <p className="rideshare-section-disclaimer">
         Another way to make this trip. Fares are RouteWise estimates, not live provider quotes; exact pricing and pickup are confirmed in each provider&apos;s app.
       </p>

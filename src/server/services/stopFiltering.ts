@@ -26,7 +26,7 @@ export interface StopFilterOptions {
 
 export type StopBudgetStatus = 'not_requested' | 'within_limit' | 'exceeds_limit' | 'unknown';
 export type StopRejectionReason = 'EXTRA_TIME_LIMIT' | 'EXTRA_TIME_UNAVAILABLE' | 'EXTRA_BUDGET_LIMIT'
-  | 'WALKING_LIMIT' | 'WALKING_UNAVAILABLE';
+  | 'WALKING_LIMIT' | 'WALKING_UNAVAILABLE' | 'ROUTE_UNAVAILABLE';
 
 export interface EvaluatedStopCandidate extends FilterableStopCandidate {
   extraStopMinutes: number | null;
@@ -40,6 +40,7 @@ export interface RejectedStopCandidate extends EvaluatedStopCandidate {
 }
 
 export interface StopFilterResult {
+  serviceFailures?: number;
   accepted: EvaluatedStopCandidate[];
   rejected: RejectedStopCandidate[];
 }
@@ -114,6 +115,7 @@ export async function filterStopCandidates(
     : [];
   const accepted: EvaluatedStopCandidate[] = [];
   const rejected: RejectedStopCandidate[] = [];
+  let serviceFailures = 0;
   const calculateViaStop = options.getRoutesViaStop ?? ((trip: TripRequest, candidate: PlaceCandidate) => {
     if (!candidate.coordinates) return Promise.resolve([]);
     return getCandidateRoutesViaStop(trip, candidate.coordinates);
@@ -132,8 +134,10 @@ export async function filterStopCandidates(
             departureTime: new Date(Date.parse(request.arrivalTime) - baselineTransit.durationSeconds * 1000).toISOString(),
           }
           : request;
-        const viaStopRoutes = await calculateViaStop(viaStopRequest, candidate);
-        comparisons = estimateExtraMinutes(originalRoutes, viaStopRoutes);
+        try {
+          const viaStopRoutes = await calculateViaStop(viaStopRequest, candidate);
+          comparisons = estimateExtraMinutes(originalRoutes, viaStopRoutes);
+        } catch { serviceFailures += 1; }
       }
 
       const walkingFeasible = restrictions.maxWalkingMinutes === undefined
@@ -158,6 +162,7 @@ export async function filterStopCandidates(
         budgetStatus,
       };
       const rejectionReasons: StopRejectionReason[] = [];
+      if (!candidate.coordinates || comparisons.length === 0) rejectionReasons.push('ROUTE_UNAVAILABLE');
       if (restrictions.maxExtraMinutes !== undefined) {
         if (comparisons.length === 0) rejectionReasons.push('EXTRA_TIME_UNAVAILABLE');
         else if (timeFeasible.length === 0) rejectionReasons.push('EXTRA_TIME_LIMIT');
@@ -168,6 +173,11 @@ export async function filterStopCandidates(
         } else if (walkingFeasible.length === 0) {
           rejectionReasons.push('WALKING_LIMIT');
         }
+      }
+      // Both constraints must hold for the same transportation option.
+      if (restrictions.maxExtraMinutes !== undefined && restrictions.maxWalkingMinutes !== undefined
+        && timeFeasible.length > 0 && walkingFeasible.length > 0 && feasibleComparisons.length === 0) {
+        rejectionReasons.push('EXTRA_TIME_LIMIT', 'WALKING_LIMIT');
       }
       if (budgetStatus === 'exceeds_limit') rejectionReasons.push('EXTRA_BUDGET_LIMIT');
 
@@ -183,5 +193,5 @@ export async function filterStopCandidates(
     }
   }
 
-  return { accepted, rejected };
+  return { accepted, rejected, ...(serviceFailures ? { serviceFailures } : {}) };
 }
