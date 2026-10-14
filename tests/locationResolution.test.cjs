@@ -167,3 +167,31 @@ test('Trip Details resolves before continuing, retains exact choices, and discar
     api.resolveLocation = savedSearch; Module._resolveFilename = oldResolve;
   }
 });
+
+test('guest current-location entry preserves coordinates and proceeds without an account', async () => {
+  const React = require('react');
+  const names = require('../src/lib/currentLocation.ts');
+  const Screen = require('../src/components/TripDetailsScreen.tsx').default;
+  const saved = { state: React.useState, ref: React.useRef, effect: React.useEffect, name: names.resolveCurrentLocationName,
+    navigator: Object.getOwnPropertyDescriptor(global, 'navigator') };
+  let slots = [], cursor = 0, continued = 0;
+  let draft = { ...DEFAULT_TRIP_DRAFT, departureNow: true, destinationText: 'Public airport', destinationPlace: { placeId: 'airport', name: 'Public airport', coordinates: { latitude: 25.79, longitude: -80.29 } } };
+  React.useState = initial => { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], value => { slots[i] = value; }]; };
+  React.useRef = initial => { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; };
+  React.useEffect = () => {};
+  Object.defineProperty(global, 'navigator', { configurable: true, value: { geolocation: { getCurrentPosition(success) { success({ coords: { latitude: 25.123456, longitude: -80.234567, accuracy: 12 } }); } } } });
+  names.resolveCurrentLocationName = async () => 'Public test location';
+  const nodes = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
+  const tree = () => { cursor = 0; return nodes(Screen({ draft, onChange(patch) { draft = { ...draft, ...patch }; }, onContinue() { continued++; }, onBack() {} })); };
+  try {
+    tree().find(node => node.type === 'button' && node.props.onClick && node.props.className === 'location-button').props.onClick();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(draft.originCoordinates, { latitude: 25.123456, longitude: -80.234567 });
+    assert.equal(draft.originText, 'Public test location');
+    await tree().find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+    assert.equal(continued, 1);
+  } finally {
+    React.useState = saved.state; React.useRef = saved.ref; React.useEffect = saved.effect; names.resolveCurrentLocationName = saved.name;
+    if (saved.navigator) Object.defineProperty(global, 'navigator', saved.navigator); else delete global.navigator;
+  }
+});

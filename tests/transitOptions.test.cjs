@@ -69,7 +69,7 @@ test('multiple transit options render a tab per alternative with a recommended b
   ] };
   const html = renderToStaticMarkup(React.createElement(TransitTabs, { route, origin: { address: 'O' }, destination: { address: 'D' } }));
   assert.ok(html.includes('role="tablist"'), 'tab bar present for multiple options');
-  assert.ok(html.includes('Bus') && html.includes('Rail + Walk'), 'both tabs labeled');
+  assert.equal((html.match(/class="transit-tab-title">Metrorail M/g) ?? []).length, 2, 'both tabs use actual line metadata instead of legacy generic titles');
   assert.ok(html.includes('Recommended'), 'recommended option marked');
 });
 
@@ -94,8 +94,9 @@ test('a walking-limit-exceeding option is marked unavailable while others stay u
     transitAlt('t-far', 'Bus', { walking: 22, availability: { available: false, reasonCode: 'WALKING_LIMIT_EXCEEDED', message: 'This option needs about 22 minutes of walking, over your 15-minute limit.' } }),
   ] };
   const html = renderToStaticMarkup(React.createElement(TransitTabs, { route, origin: { address: 'O' }, destination: { address: 'D' } }));
-  assert.ok(html.includes('over your 15-minute limit'), 'unavailable option shows its reason');
-  assert.ok(html.includes('Rail'), 'the valid option remains');
+  assert.ok(html.includes('Exceeds walking limit by 7 min'), 'unavailable option shows its concise reason');
+  assert.ok(!html.includes('over your 15-minute limit'), 'legacy detached warning is removed');
+  assert.ok(html.includes('Metrorail M'), 'the valid option remains');
 });
 
 test('fare is shown per option and missing fare is labeled without $0', () => {
@@ -134,7 +135,9 @@ test('wire adapter maps transitAlternatives with per-step geometry and vehicle d
   };
   const plan = toTripPlan(payload);
   assert.equal(plan.routes[0].transitAlternatives?.length, 1);
-  assert.equal(plan.routes[0].transitAlternatives?.[0].title, 'Rail');
+  assert.equal(plan.routes[0].transitAlternatives?.[0].title, 'Metrorail M');
+  assert.equal(plan.routes[0].steps[0].transit.lineShortName, 'M');
+  assert.equal(plan.routes[0].transitAlternatives[0].steps[0].transit.lineShortName, 'M');
   assert.equal(plan.routes[0].steps[0].encodedPolyline, 'seg-1');
   assert.equal(plan.routes[0].steps[0].transit.vehicleType, 'SUBWAY');
 });
@@ -186,7 +189,8 @@ test('stop flow defers search, preserves preferences on Back, skips directly and
     if (!(index in values)) values[index] = typeof initial === 'function' ? initial() : initial;
     return [values[index], value => { values[index] = typeof value === 'function' ? value(values[index]) : value; }];
   };
-  React.useRef = () => ref;
+  const defaultsRef = { current: { edited: false, applied: false } };
+  React.useRef = initial => typeof initial === 'number' ? ref : defaultsRef;
   const stop = { id: 's', name: 'Cafe', category: 'coffee', address: 'A', estimatedExtraMinutes: 4, rating: 4, timing: 'ON_ROUTE' };
   api.suggestStops = async () => { searches++; return { stops: [stop], availableCategories: [], recommendedCategories: [], timeOfDay: null, warnings: [] }; };
   api.planTrip = (...args) => { calls.push(args); return new Promise(resolve => { finish = () => resolve({ routes: [] }); }); };
@@ -253,7 +257,8 @@ test('branding returns every planner screen to Home and clears a pending request
     if (!(index in values)) values[index] = typeof initial === 'function' ? initial() : initial;
     return [values[index], value => { values[index] = typeof value === 'function' ? value(values[index]) : value; }];
   };
-  React.useRef = () => ref;
+  const defaultsRef = { current: { edited: false, applied: false } };
+  React.useRef = initial => typeof initial === 'number' ? ref : defaultsRef;
   function nodes(node) {
     if (!node || typeof node !== 'object') return [];
     if (Array.isArray(node)) return node.flatMap(nodes);
@@ -274,4 +279,141 @@ test('branding returns every planner screen to Home and clears a pending request
       assert.equal(values[3], null, 'trip reset');
     }
   } finally { React.useState = savedState; React.useRef = savedRef; }
+});
+
+const { resolveTransitBranding, buildTransitJourneyLabel } = require('../src/lib/transitDisplay.ts');
+const ride = transit => ({ mode: 'TRANSIT', transit });
+
+test('journey titles use actual routes and preserve every transfer line', () => {
+  const bus = n => ride({ vehicleType: 'BUS', lineShortName: n });
+  assert.equal(buildTransitJourneyLabel([bus('11')]), 'Bus 11');
+  assert.equal(buildTransitJourneyLabel([bus('11'), bus('24')]), 'Bus 11 \u2192 Bus 24');
+  assert.equal(buildTransitJourneyLabel([
+    { mode: 'WALK' }, ride({ vehicleType: 'BUS', line: 'Metrobus', lineShortName: '11' }),
+    { mode: 'WALK' }, ride({ vehicleType: 'SUBWAY', line: 'Metrorail Orange Line', lineShortName: 'Orange' }),
+    ride({ vehicleType: 'TRAM', line: 'Metromover' }), { mode: 'WALK' },
+  ]), 'Metrobus 11 \u2192 Metrorail Orange Line \u2192 Metromover');
+  assert.equal(buildTransitJourneyLabel([ride({ vehicleType: 'SUBWAY', line: 'Metrorail Green Line', lineShortName: 'Green' })]), 'Metrorail Green Line');
+});
+
+test('source branding works across cities, with no geographic guessing', () => {
+  for (const name of ['TECO Line Streetcar System', 'SunRail', 'Tri-Rail', 'BART', 'Muni', 'Washington Metro', 'MBTA Red Line', 'MARTA Gold Line']) {
+    assert.equal(resolveTransitBranding({ vehicleType: 'TRAM', line: name }).displayName, name);
+  }
+  for (const agency of ['CTA', 'MTA', 'LYNX', 'HART']) {
+    assert.equal(resolveTransitBranding({ vehicleType: 'BUS', agencyName: agency, lineShortName: '11', line: 'Downtown - Airport' }).displayName, `${agency} Bus 11`);
+  }
+  assert.equal(resolveTransitBranding({ vehicleType: 'TRAM', agencyName: 'Miami-Dade Department of Transportation and Public Works' }).displayName, 'Tram');
+  assert.equal(resolveTransitBranding({ vehicleType: 'BUS', line: 'Bus 11', lineShortName: '11' }).displayName, 'Bus 11');
+  assert.equal(resolveTransitBranding({ vehicleType: 'BUS', agencyName: 'Metrobus', lineShortName: '11' }).displayName, 'Metrobus 11');
+  assert.equal(resolveTransitBranding({ vehicleType: 'BUS', line: 'Route 11' }).displayName, 'Bus Route 11');
+  assert.equal(resolveTransitBranding({ vehicleType: 'FERRY', line: 'undefined', lineShortName: ' ' }).displayName, 'Ferry');
+  assert.equal(resolveTransitBranding({ vehicleType: 'SUBWAY', lineShortName: 'A', headsign: 'Downtown' }).displayName, 'Subway A');
+  assert.equal(buildTransitJourneyLabel([]), 'Transit');
+});
+
+test('same-line splits collapse only with continuity evidence, and retain actual transfers', () => {
+  const first = ride({ vehicleType: 'BUS', lineShortName: '11', agencyName: 'Operator', headsign: 'Center', arrivalStop: 'B', arrivalTime: '10:00' });
+  const next = ride({ ...first.transit, departureStop: 'B', departureTime: '10:00', arrivalStop: 'C', arrivalTime: '10:05' });
+  const original = JSON.stringify([first, next]);
+  assert.equal(buildTransitJourneyLabel([first, next]), 'Operator Bus 11');
+  assert.equal(JSON.stringify([first, next]), original);
+  assert.equal(buildTransitJourneyLabel([first, { mode: 'WALK' }, next]), 'Operator Bus 11 \u2192 Operator Bus 11');
+  assert.equal(buildTransitJourneyLabel([first, { ...next, instruction: 'Transfer to bus 11' }]), 'Operator Bus 11 \u2192 Operator Bus 11');
+  assert.equal(buildTransitJourneyLabel([first, ride({ ...next.transit, agencyName: 'Another' })]), 'Operator Bus 11 \u2192 Another Bus 11');
+  assert.equal(buildTransitJourneyLabel([ride({ lineShortName: '11', vehicleType: 'BUS' }), ride({ lineShortName: '11', vehicleType: 'BUS' })]), 'Bus 11 \u2192 Bus 11');
+});
+
+test('results and stranded tabs share names and retain headsign and stop details', () => {
+  const steps = [transitStep('TRANSIT', { transit: { line: 'Metrobus', short: '11', vehicleType: 'BUS', headsign: 'Downtown', from: 'A', to: 'B', stopCount: 4 }, duration: 12 })];
+  const route = { ...baseRoute, transitAlternatives: [transitAlt('a', 'Bus', { steps }), transitAlt('b', 'Bus', { steps: [transitStep('TRANSIT', { transit: { line: 'TECO Line Streetcar System', vehicleType: 'TRAM' } })] })] };
+  for (const variant of ['results', 'stranded']) {
+    const html = renderToStaticMarkup(React.createElement(TransitTabs, { route, variant }));
+    for (const label of ['Metrobus 11', 'TECO Line Streetcar System', 'toward Downtown', '4 stops', '12 min', ' at A']) assert.ok(html.includes(label), label);
+  }
+});
+
+test('planner applies saved defaults once, resets for a new trip and protects edits made before load', () => {
+  const Home = require('../src/app/page.tsx').default;
+  const savedState = React.useState, savedRef = React.useRef;
+  let slots = [], cursor = 0;
+  React.useState = initial => { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], next => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; }]; };
+  React.useRef = initial => { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; };
+  function nodes(node) {
+    if (!node || typeof node !== 'object') return [];
+    if (Array.isArray(node)) return node.flatMap(nodes);
+    return [node, ...nodes(node.props?.children)];
+  }
+  const tree = () => { cursor = 0; return nodes(Home()); };
+  const component = name => tree().find(node => node.type?.name === name);
+  const saved = { userId: 'u', preferredTransportMode: 'PUBLIC_TRANSIT', routePriority: 'FASTEST', maxWalkingMinutes: 8, maxBudget: 12 };
+  try {
+    component('TripPreferenceDefaults').props.onReady(saved);
+    component('HomeScreen').props.onGetStarted();
+    let details = component('TripDetailsScreen');
+    assert.equal(details.props.draft.budgetUsd, 12); assert.equal(details.props.draft.maxWalkingMinutes, 8);
+    details.props.onChange({ budgetUsd: 40 });
+    component('TripPreferenceDefaults').props.onReady({ ...saved, maxBudget: 5 });
+    assert.equal(component('TripDetailsScreen').props.draft.budgetUsd, 40);
+    tree().find(node => node.props?.['aria-label'] === 'RouteWise home').props.onClick({ preventDefault() {} });
+    component('HomeScreen').props.onGetStarted();
+    component('TripDetailsScreen').props.onChange({ originText: 'User entered this before defaults arrived' });
+    component('TripPreferenceDefaults').props.onReady(saved);
+    details = component('TripDetailsScreen');
+    assert.equal(details.props.draft.budgetUsd, 12); assert.equal(details.props.draft.maxWalkingMinutes, 8);
+    assert.equal(details.props.draft.originText, 'User entered this before defaults arrived');
+    tree().find(node => node.props?.['aria-label'] === 'RouteWise home').props.onClick({ preventDefault() {} });
+    component('HomeScreen').props.onGetStarted();
+    component('TripDetailsScreen').props.onChange({ budgetUsd: 40, preferredTransportMode: undefined });
+    component('TripPreferenceDefaults').props.onReady(saved);
+    details = component('TripDetailsScreen');
+    assert.equal(details.props.draft.budgetUsd, 40);
+    assert.equal(details.props.draft.preferredTransportMode, undefined, 'explicit no preference survives slow defaults');
+    assert.equal(details.props.draft.maxWalkingMinutes, 8);
+    assert.equal(details.props.draft.routePriority, 'FASTEST');
+    tree().find(node => node.props?.['aria-label'] === 'RouteWise home').props.onClick({ preventDefault() {} });
+    component('TripPreferenceDefaults').props.onReady(saved);
+    component('HomeScreen').props.onGetStarted();
+    assert.equal(component('TripDetailsScreen').props.draft.budgetUsd, 12, 'new unedited trip reapplies defaults');
+  } finally { React.useState = savedState; React.useRef = savedRef; }
+});
+
+// Guest Stranded flow uses geolocation and travel APIs, with no auth provider calls.
+test('Stranded guest gets location, resolves destination and receives results without account access', async () => {
+  const api = require('../src/lib/api.ts');
+  const locationNames = require('../src/lib/currentLocation.ts');
+  const Stranded = require('../src/components/StrandedMode.tsx').default;
+  const saved = { state: React.useState, effect: React.useEffect, resolve: api.resolveLocation, plan: api.planTrip, safe: api.findSafeWaitPlaces,
+    name: locationNames.resolveCurrentLocationName, navigator: Object.getOwnPropertyDescriptor(global, 'navigator') };
+  let slots = [], cursor = 0, effects = [], planned = 0;
+  React.useState = initial => { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], next => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; }]; };
+  React.useEffect = callback => { effects.push(callback); };
+  Object.defineProperty(global, 'navigator', { configurable: true, value: { geolocation: { getCurrentPosition(success) { success({ coords: { latitude: 25.76, longitude: -80.2, accuracy: 10 } }); } } } });
+  locationNames.resolveCurrentLocationName = async () => 'Public test location';
+  api.resolveLocation = async () => ({ place: { placeId: 'test-destination', name: 'Airport', coordinates: { latitude: 25.79, longitude: -80.29 } } });
+  api.planTrip = async (request, preference) => {
+    planned++;
+    assert.deepEqual(request.origin, { latitude: 25.76, longitude: -80.2 });
+    assert.deepEqual(request.destination, { placeId: 'test-destination' });
+    assert.equal(request.allowTransit, true); assert.equal(request.allowWalking, true);
+    assert.deepEqual(preference, { skip: true });
+    assert.ok(!('user_id' in request));
+    return { id: 'guest-trip', routes: [], rideshares: [], warnings: [] };
+  };
+  api.findSafeWaitPlaces = async () => ({ best: null, alternates: [] });
+  const nodes = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
+  const tree = () => { cursor = 0; effects = []; return nodes(Stranded({ onExit() {} })); };
+  try {
+    tree(); for (const effect of effects) effect();
+    let current = tree();
+    current.find(node => node.type === 'input').props.onChange({ target: { value: 'Public test airport' } });
+    await tree().find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+    current = tree(); assert.equal(planned, 1);
+    assert.ok(current.some(node => node.type?.name === 'StrandedResults'));
+    assert.ok(!current.some(node => node.type?.name === 'GoogleSignIn' || node.type?.name === 'EmailAuth'));
+  } finally {
+    React.useState = saved.state; React.useEffect = saved.effect; api.resolveLocation = saved.resolve; api.planTrip = saved.plan; api.findSafeWaitPlaces = saved.safe;
+    locationNames.resolveCurrentLocationName = saved.name;
+    if (saved.navigator) Object.defineProperty(global, 'navigator', saved.navigator); else delete global.navigator;
+  }
 });

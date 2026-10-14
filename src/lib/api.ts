@@ -5,6 +5,7 @@ import type { RouteOption, SuggestedStop, TripInput, TripPlan } from './types';
 import type { StopPreferenceSubmission } from '../components/StopPreferences';
 import { rideshareOptionSchema, routeSchema } from './view-contracts';
 import { longDistanceSchema } from './longDistance';
+import { buildTransitJourneyLabel } from './transitDisplay';
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
 const nonnegative = z.number().nonnegative();
@@ -227,20 +228,20 @@ export function toTripPlan(payload: unknown, includesStop = false): TripPlan {
     steps: route.steps.map(step => ({
       mode: step.mode, instruction: step.instruction ?? '', durationMinutes: step.durationMinutes ?? null, distanceMeters: step.distanceMeters ?? null,
       encodedPolyline: step.encodedPolyline ?? null,
-      transit: step.transit ? { line: step.transit.line ?? step.transit.lineShortName ?? '', headsign: step.transit.headsign ?? null,
+      transit: step.transit ? { line: step.transit.line ?? step.transit.lineShortName ?? '', lineShortName: step.transit.lineShortName ?? null, headsign: step.transit.headsign ?? null,
         departureStop: step.transit.departureStop ?? null, arrivalStop: step.transit.arrivalStop ?? null, departureTime: null, arrivalTime: null,
         vehicleType: step.transit.vehicleType ?? null, vehicleName: step.transit.vehicleName ?? null, lineColor: step.transit.lineColor ?? null,
         agencyName: step.transit.agencyName ?? null, stopCount: step.transit.stopCount ?? null, agencies: [] } : null,
     })),
     transitAlternatives: route.transitAlternatives?.map(alt => ({
-      fare: alt.fare, id: alt.id, title: alt.title, durationMinutes: alt.durationMinutes, distanceMeters: alt.distanceMeters,
+      fare: alt.fare, id: alt.id, title: buildTransitJourneyLabel(alt.steps), durationMinutes: alt.durationMinutes, distanceMeters: alt.distanceMeters,
       walkingMinutes: alt.walkingMinutes,
       estimatedTransportationCost: alt.estimatedTransportationCost,
       encodedPolyline: alt.encodedPolyline,
       steps: alt.steps.map(step => ({
         mode: step.mode, instruction: step.instruction ?? '', durationMinutes: step.durationMinutes ?? null, distanceMeters: step.distanceMeters ?? null,
         encodedPolyline: step.encodedPolyline ?? null,
-        transit: step.transit ? { line: step.transit.line ?? step.transit.lineShortName ?? '', headsign: step.transit.headsign ?? null,
+        transit: step.transit ? { line: step.transit.line ?? step.transit.lineShortName ?? '', lineShortName: step.transit.lineShortName ?? null, headsign: step.transit.headsign ?? null,
           departureStop: step.transit.departureStop ?? null, arrivalStop: step.transit.arrivalStop ?? null, departureTime: null, arrivalTime: null,
           vehicleType: step.transit.vehicleType ?? null, vehicleName: step.transit.vehicleName ?? null, lineColor: step.transit.lineColor ?? null,
           agencyName: step.transit.agencyName ?? null, stopCount: step.transit.stopCount ?? null, agencies: [] } : null,

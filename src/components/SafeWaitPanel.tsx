@@ -3,6 +3,7 @@ import { formatDuration } from '@/lib/formatDuration';
 import type { SafeWaitCandidate } from '@/lib/types';
 
 type SafeWaitPanelProps = {
+  selectedActionLabel?: string;
   status: 'loading' | 'ready' | 'error';
   best: SafeWaitCandidate | null;
   alternates: SafeWaitCandidate[];
@@ -18,7 +19,8 @@ function distanceLabel(place: SafeWaitCandidate) {
   return place.distanceMeters >= 1000 ? `${(place.distanceMeters / 1000).toFixed(1)} km away` : `${place.distanceMeters} m away`;
 }
 
-function SafeWaitCard({ place, prominent, selected, routeDetails, onRouteHere }: {
+function SafeWaitCard({ place, prominent, selected, routeDetails, onRouteHere, selectedActionLabel }: {
+  selectedActionLabel?: string;
   place: SafeWaitCandidate;
   prominent: boolean;
   selected: boolean;
@@ -49,14 +51,14 @@ function SafeWaitCard({ place, prominent, selected, routeDetails, onRouteHere }:
         aria-expanded={selected}
         onClick={() => onRouteHere(place)}
       >
-        {selected ? 'Hide route' : 'Route me here'}
+        {selected ? selectedActionLabel ?? 'Hide route' : 'Route me here'}
       </button>
       {selected && routeDetails}
     </article>
   );
 }
 
-export default function SafeWaitPanel({ status, best, alternates, errorMessage, selectedPlaceId, routeDetails, onRouteHere, onRetry }: SafeWaitPanelProps) {
+export default function SafeWaitPanel({ status, best, alternates, errorMessage, selectedPlaceId, routeDetails, onRouteHere, onRetry, selectedActionLabel }: SafeWaitPanelProps) {
   return (
     <section className="safe-wait-panel" aria-labelledby="safe-wait-title">
       <h2 id="safe-wait-title">Safe Places to Wait</h2>
@@ -84,9 +86,9 @@ export default function SafeWaitPanel({ status, best, alternates, errorMessage, 
 
       {status === 'ready' && best && (
         <div className="safe-wait-list">
-          <SafeWaitCard place={best} prominent selected={selectedPlaceId === best.placeId} routeDetails={routeDetails} onRouteHere={onRouteHere} />
+          <SafeWaitCard place={best} prominent selected={selectedPlaceId === best.placeId} routeDetails={routeDetails} onRouteHere={onRouteHere} selectedActionLabel={selectedActionLabel} />
           {alternates.filter(place => place.placeId !== best.placeId).slice(0, 2).map(place => (
-            <SafeWaitCard key={place.placeId} place={place} prominent={false} selected={selectedPlaceId === place.placeId} routeDetails={routeDetails} onRouteHere={onRouteHere} />
+            <SafeWaitCard key={place.placeId} place={place} prominent={false} selected={selectedPlaceId === place.placeId} routeDetails={routeDetails} onRouteHere={onRouteHere} selectedActionLabel={selectedActionLabel} />
           ))}
         </div>
       )}

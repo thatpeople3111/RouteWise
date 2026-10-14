@@ -342,7 +342,8 @@ test('Stranded results contain one rideshare block, three real waiting cards, th
   const html = renderToStaticMarkup(React.createElement(StrandedResults, { plan, origin: SF, destination: PHOENIX, safePlaces }));
   assert.equal((html.match(/id="rideshare-title"/g) || []).length, 1);
   assert.equal(html.includes('rideshare-options-heading'), false);
-  const headings = ['rideshare-title', 'safe-wait-title', 'stranded-TRANSIT-title', 'stranded-WALK-title'].map(id => html.indexOf('id="' + id + '"'));
+  const headings = ['rideshare-title', 'safe-wait-title'].map(id => html.indexOf('id="' + id + '"'));
+  assert.ok(!html.includes('stranded-TRANSIT-title') && !html.includes('stranded-WALK-title'), 'empty transport groups remain hidden');
   assert.ok(headings.every((position, i) => position >= 0 && (i === 0 || position > headings[i - 1])));
   assert.equal((html.match(/<article class="safe-wait-card/g) || []).length, 3);
   assert.equal(html.includes('Wait place 4'), false);

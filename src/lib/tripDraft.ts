@@ -1,4 +1,5 @@
 import type { Coordinates, RideshareProvider, TripRequest } from './types';
+import type { TransportModePreference, RoutePriority } from './preferences';
 
 export interface SelectedTripPlace {
   placeId: string;
@@ -12,6 +13,10 @@ export interface SelectedTripPlace {
  * One source of truth; assembled into the existing TripRequest only on "Let's Go!".
  */
 export interface TripDraft {
+  preferredTransportMode?: TransportModePreference;
+  routePriority?: RoutePriority;
+  usingSavedDefaults?: boolean;
+  savedDefaultsLimited?: boolean;
   /** Typed origin address text. */
   originText: string;
   /** Resolved current-location coordinates, when the user chose "Use my location". */
@@ -80,7 +85,7 @@ export function draftToTripRequest(draft: TripDraft): TripRequest {
     avoidTolls: draft.hasCar && draft.avoidTolls,
     allowTransit: draft.allowTransit,
     allowWalking: draft.allowWalking,
-    preference: 'balanced',
+    preference: draft.routePriority === 'FASTEST' ? 'fastest' : draft.routePriority === 'CHEAPEST' ? 'cheapest' : 'balanced',
     nearbyCategories: [],
     rideshareProviders: draft.rideshareProviders,
     ...(draft.maxRideshareBudget !== undefined ? { maxRideshareBudget: draft.maxRideshareBudget } : {}),

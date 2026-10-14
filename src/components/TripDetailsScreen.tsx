@@ -5,6 +5,7 @@ import type { Coordinates } from '@/lib/types';
 import type { TripDraft } from '@/lib/tripDraft';
 import type { SelectedTripPlace } from '@/lib/tripDraft';
 import { resolveLocation } from '@/lib/api';
+import { resolveCurrentLocationName } from '@/lib/currentLocation';
 
 type TripDetailsScreenProps = {
 	draft: TripDraft;
@@ -43,10 +44,13 @@ export default function TripDetailsScreen({ draft, onChange, onBack, onContinue 
 				onChange({
 					originPlace: null,
 					originCoordinates: current,
-					originText: `Current location (${current.latitude.toFixed(4)}, ${current.longitude.toFixed(4)})`,
+					originText: 'Current location',
 				});
 				setLocationMessage('Using your current location. Coordinates are saved with this trip.');
 				setGettingLocation(false);
+				void resolveCurrentLocationName(current, coords.accuracy).then(name => {
+					if (requestId === locationRequest.current) onChange({ originText: name });
+				});
 			},
 			locationError => {
 				if (requestId !== locationRequest.current) return;

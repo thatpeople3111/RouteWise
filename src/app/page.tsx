@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import ConstraintsScreen from "@/components/ConstraintsScreen";
 import HomeScreen from "@/components/HomeScreen";
+import AccountMenu from "@/components/AccountMenu";
+import TripPreferenceDefaults from '@/components/TripPreferenceDefaults';
+import { applyTripPreferenceDefaults, preferenceDraftFields, type DefaultsGuard } from '@/lib/tripPreferenceDefaults';
+import type { UserPreferences } from '@/lib/preferences';
 import LoadingScreen from "@/components/LoadingScreen";
 import RouteResults from "@/components/RouteResults";
 import StrandedMode from "@/components/StrandedMode";
@@ -48,6 +52,13 @@ export default function Home() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const requestId = useRef(0);
+  const defaultsGuard = useRef<DefaultsGuard>({ edited: false, applied: false, editedPreferenceFields: [] });
+  function applySavedDefaults(preferences: UserPreferences) {
+    if (defaultsGuard.current.applied || !['HOME', 'TRIP_DETAILS', 'CONSTRAINTS'].includes(screen)) return;
+    const guard = { ...defaultsGuard.current };
+    defaultsGuard.current.applied = true;
+    setDraft(current => applyTripPreferenceDefaults(current, preferences, guard));
+  }
 
   async function handleTripSubmit(submittedTrip: TripInput) {
     ++requestId.current;
@@ -140,6 +151,11 @@ export default function Home() {
   const matchingStops = suggestions;
 
   function updateDraft(patch: Partial<TripDraft>) {
+    defaultsGuard.current.edited = true;
+    const changed = preferenceDraftFields.filter(field => Object.prototype.hasOwnProperty.call(patch, field));
+    // No walking is an explicit trip choice; protect its associated limit too.
+    if (Object.prototype.hasOwnProperty.call(patch, 'allowWalking')) changed.push('maxWalkingMinutes');
+    defaultsGuard.current.editedPreferenceFields = [...new Set([...(defaultsGuard.current.editedPreferenceFields ?? []), ...changed])];
     setDraft(current => ({ ...current, ...patch }));
   }
 
@@ -148,6 +164,7 @@ export default function Home() {
     setBusy(false);
     setStopFlow('OPT_IN');
     setDraft(DEFAULT_TRIP_DRAFT);
+    defaultsGuard.current = { edited: false, applied: false, editedPreferenceFields: [] };
     setTrip(null);
     setStopPreference(null);
     setSubmittedStopPreference(null);
@@ -161,6 +178,8 @@ export default function Home() {
   }
 
   function handleLetsGo() {
+    defaultsGuard.current.edited = true;
+    defaultsGuard.current.applied = true; // Freeze defaults when preparing the request.
     setError('');
     try {
       const request = draftToTripRequest(draft);
@@ -177,6 +196,7 @@ export default function Home() {
 
   return (
     <main className="app-shell">
+      <TripPreferenceDefaults onReady={applySavedDefaults} />
       <div className="page-container">
         <header className="site-header">
           <Link className="brand" href="/" aria-label="RouteWise home" onClick={event => { event.preventDefault(); startOver(); }}>
@@ -184,6 +204,7 @@ export default function Home() {
             <span>routewise</span>
           </Link>
           <span className="header-caption"><span className="status-dot" /> A clearer way across town</span>
+          <AccountMenu onContinueAsGuest={() => { if (screen === 'HOME') setScreen('TRIP_DETAILS'); }} />
         </header>
         <section className="intro">
           <div>
@@ -199,7 +220,9 @@ export default function Home() {
           </div>
         </section>
         {screen === "HOME" && (
-          <HomeScreen onGetStarted={() => setScreen("TRIP_DETAILS")} onStranded={() => setScreen("STRANDED")} />
+          <>
+            <HomeScreen onGetStarted={() => setScreen("TRIP_DETAILS")} onStranded={() => setScreen("STRANDED")} />
+          </>
         )}
         {screen === "STRANDED" ? (
           <StrandedMode onExit={() => setScreen("HOME")} />
@@ -327,6 +350,13 @@ export default function Home() {
           {screen === "RESULTS" && trip && plan && (
             <div className="grid gap-4 min-w-0">
               <RouteResults
+                navigation={{
+                  departureTime: trip.departureTime,
+                  arrivalTime: trip.arrivalTime,
+                  origin: draft.originPlace ?? (draft.originCoordinates ? { ...draft.originCoordinates, label: draft.originText } : undefined),
+                  destination: draft.destinationPlace ?? undefined,
+                }}
+                preferredTransportMode={draft.preferredTransportMode}
                 plan={plan}
                 origin={trip.origin}
                 destination={trip.destination}

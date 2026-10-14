@@ -3,10 +3,18 @@ import { formatDuration } from '@/lib/formatDuration';
 import Map from '@/components/Map';
 import FarePrice from './FarePrice';
 import TransitTabs from '@/components/TransitTabs';
+import { resolveTransitBranding } from '@/lib/transitDisplay';
+import { getShortConstraintMessage } from '@/lib/routeWarnings';
+import { routeAvailabilityCategory } from '@/lib/routeAvailability';
+import RouteStart from './RouteStart';
+import type { NormalNavigationEndpoints } from '@/lib/startNavigation';
 
 export type RouteCardLabel = 'BEST' | 'FASTEST' | 'CHEAPEST';
 
 type RouteCardProps = {
+	navigation?: NormalNavigationEndpoints;
+	preferred?: boolean;
+	layout?: 'vertical' | 'horizontal';
 	journeyCost?: { totalUsd: number | null; knownSubtotalUsd: number; note: string };
 	variant?: 'results' | 'stranded';
 	route: RouteOption;
@@ -45,6 +53,9 @@ function badgeStyle(label: RouteCardLabel) {
 }
 
 export default function RouteCard({
+	navigation,
+	preferred = false,
+	layout = 'vertical',
 	journeyCost,
 	variant = 'results',
 	route,
@@ -74,6 +85,10 @@ export default function RouteCard({
 	const routeTitle = selectedStop ? `${route.label} + ${stopCategoryLabel} Stop` : route.label;
 	const titleId = `route-card-${route.id}-title`;
 	const unavailable = route.availability && route.availability.available === false;
+	const constraintMessage = getShortConstraintMessage(route.availability, route);
+	const availabilityShownInAlternative = route.mode === 'TRANSIT' && route.transitAlternatives?.some(alt =>
+		alt.availability?.available === false && alt.availability.reasonCode === route.availability?.reasonCode
+		&& alt.walkingMinutes === route.walkingMinutes);
 
 	// Driving: build the estimated total from the known parts only (vehicle cost + tolls + parking).
 	const recommendedLot = route.mode === 'DRIVE'
@@ -101,7 +116,7 @@ export default function RouteCard({
 			aria-labelledby={titleId}
 		>
 			<div className={`h-1 ${unavailable ? 'bg-[#e2ad42]' : selected || best ? 'bg-[#24634d]' : 'bg-[#dce5dc]'}`} aria-hidden="true" />
-			<div className={`p-5 sm:p-6 ${variant === 'stranded' ? 'stranded-route-content' : ''}`}>
+			<div className={`p-5 sm:p-6 ${layout === 'horizontal' ? 'horizontal-route-content' : ''} ${variant === 'stranded' ? 'stranded-route-content' : ''}`}>
 				<div className="flex flex-wrap items-center justify-between gap-3">
 					{labels.length > 0 ? (
 						<div className="flex flex-wrap gap-2" aria-label="Route distinctions">
@@ -132,9 +147,10 @@ export default function RouteCard({
 						<h2 id={titleId} className="break-words text-lg font-semibold leading-snug text-[#192923] sm:text-xl">
 							{routeTitle}
 						</h2>
-						{unavailable && route.availability?.message && (
-							<p className="mt-1 rounded-sm border-l-2 border-[#e2ad42] bg-[#fff9e9] px-2 py-1 text-sm leading-5 text-[#715522]" role="status">
-								{route.availability.message}
+						{preferred && <p className="field-hint">Your preferred mode</p>}
+						{unavailable && !availabilityShownInAlternative && (
+							<p className="route-constraint-warning" role="status">
+								<strong>{routeAvailabilityCategory(route.availability) === 'USER_CONSTRAINT' ? 'Not recommended' : 'Unavailable'}</strong>{constraintMessage && <span>{constraintMessage}</span>}
 							</p>
 						)}
 						{summary && <p className="mt-1 text-sm leading-5 text-[#68766f]">{summary}</p>}
@@ -146,11 +162,12 @@ export default function RouteCard({
 					</div>
 				</div>
 
+        {navigation && !(route.mode === 'TRANSIT' && route.transitAlternatives?.length) && <RouteStart key={JSON.stringify(navigation)} route={route} {...navigation} tripOrigin={origin} tripDestination={destination} selectedStop={selectedStop} />}
 				{/* Per-route compact map: this option's own geometry only. Transit shows tabs + per-option map. */}
 				{route.mode === 'TRANSIT' && route.transitAlternatives && route.transitAlternatives.length > 0 ? (
-					<TransitTabs route={route} origin={origin!} destination={destination!} variant={variant} />
+					<TransitTabs route={route} origin={origin!} destination={destination!} variant={variant} navigation={navigation} selectedStop={selectedStop} />
 				) : origin && destination ? (
-					<div className={`mt-4 ${variant === 'stranded' ? 'stranded-route-map' : ''}`}>
+					<div className={`mt-4 route-card-map ${variant === 'stranded' ? 'stranded-route-map' : ''}`}>
 						<Map origin={origin} destination={destination} selectedRoute={route} selectedStop={selectedStop} variant="compact" />
 					</div>
 				) : null}
@@ -272,7 +289,7 @@ export default function RouteCard({
 					<details className="mt-4 text-sm text-[#43534b]">
 						<summary className="cursor-pointer font-semibold">Route directions ({route.steps.length} steps)</summary>
 						<ol className="mt-2 list-decimal space-y-2 pl-5 text-xs leading-5">
-							{route.steps.map((step, index) => <li key={index}>{step.instruction || modeLabels[step.mode]}{step.transit?.line ? ` · ${step.transit.line}` : ''}</li>)}
+							{route.steps.map((step, index) => <li key={index}>{step.instruction || modeLabels[step.mode]}{step.transit ? ` · ${resolveTransitBranding(step.transit).displayName}` : ''}</li>)}
 						</ol>
 					</details>
 				)}
@@ -284,9 +301,9 @@ export default function RouteCard({
 					</div>
 				)}
 
-				{route.warnings.length > 0 && (
+				{route.warnings.filter(warning => warning !== route.availability?.message).length > 0 && (
 					<ul className="mt-4 grid gap-1 rounded-sm border-l-4 border-[#e2ad42] bg-[#fff9e9] px-3 py-2 text-xs leading-5 text-[#715522]">
-						{route.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+						{route.warnings.filter(warning => warning !== route.availability?.message).map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
 					</ul>
 				)}
 			</div>

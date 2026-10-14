@@ -2,8 +2,16 @@ import RouteCard, { type RouteCardLabel } from '@/components/RouteCard';
 import LongDistanceResults from '@/components/LongDistanceResults';
 import RideshareOptions, { rideshareLabelsById } from '@/components/RideshareOptions';
 import type { Location, RouteOption, SuggestedStop, TripPlan } from '@/lib/types';
+import { getGlobalWarnings } from '@/lib/routeWarnings';
+import { partitionLocalRoutes } from '@/lib/routeAvailability';
+import NonRecommendedRoutes from './NonRecommendedRoutes';
+import type { TransportModePreference } from '@/lib/preferences';
+import { preferredModePresentation, isValidPresentationRoute } from '@/lib/preferredModePresentation';
+import type { NormalNavigationEndpoints } from '@/lib/startNavigation';
 
 type RouteResultsProps = {
+	navigation?: NormalNavigationEndpoints;
+	preferredTransportMode?: TransportModePreference;
 	plan: TripPlan;
 	origin: Location;
 	destination: Location;
@@ -27,7 +35,7 @@ function getRankedRoutes(plan: TripPlan): RankedRoute[] {
 	for (const ranking of rankings) {
 		if (!ranking.id) continue;
 		const route = plan.routes.find(candidate => candidate.id === ranking.id);
-		if (!route) continue;
+		if (!route || !isValidPresentationRoute(route)) continue;
 
 		const existing = grouped.find(entry => entry.route.id === route.id);
 		if (existing) existing.labels.push(ranking.label);
@@ -50,19 +58,21 @@ function routeReason(labels: readonly RouteCardLabel[], plan: TripPlan) {
 	return 'This option has the lowest known cost among the returned routes.';
 }
 
-/** Warnings that describe one specific mode now live inside that mode's tile, not in the bottom list. */
-const ROUTE_SCOPED_WARNING = /walking|transit|driv|fare|parking|detour|stop/i;
-function globalWarnings(plan: TripPlan): string[] {
-	return plan.warnings.filter(warning => !ROUTE_SCOPED_WARNING.test(warning));
-}
-
-export default function RouteResults({ plan, origin, destination, onEditTrip, selectedStop }: RouteResultsProps) {
-  if (plan.tripScope === 'LONG_DISTANCE' && plan.longDistance) return <LongDistanceResults plan={plan} origin={origin} destination={destination} onEditTrip={onEditTrip} selectedStop={selectedStop} />;
-	const rankedRoutes = getRankedRoutes(plan);
+export default function RouteResults({ plan, origin, destination, onEditTrip, selectedStop, preferredTransportMode, navigation = {} }: RouteResultsProps) {
+  if (plan.tripScope === 'LONG_DISTANCE' && plan.longDistance) return <LongDistanceResults plan={plan} origin={origin} destination={destination} onEditTrip={onEditTrip} selectedStop={selectedStop} navigation={navigation} />;
+	const { available, restricted } = partitionLocalRoutes(plan.routes);
+	const { routeMode: preferredMode, preferredRouteId, promoteRideshare } = preferredModePresentation(plan, available, preferredTransportMode);
+	const rankedRoutes = getRankedRoutes({ ...plan, routes: available });
 	const bestRoute = rankedRoutes.find(entry => entry.labels.includes('BEST'));
 	const otherRoutes = rankedRoutes.filter(entry => entry !== bestRoute);
+	if (preferredRouteId) otherRoutes.sort((a, b) => Number(b.route.id === preferredRouteId) - Number(a.route.id === preferredRouteId));
+	const horizontalSecondary = !!bestRoute && otherRoutes.length === 1
+		&& available.length === 2 && available.every(route => ['DRIVE', 'WALK', 'TRANSIT'].includes(route.mode));
 	const rideshareLabels = rideshareLabelsById(plan);
-	const pageWarnings = globalWarnings(plan);
+	const pageWarnings = getGlobalWarnings(plan);
+	const rideshareSection = (plan.rideshares ?? []).length > 0
+		? <RideshareOptions options={plan.rideshares ?? []} labelsById={rideshareLabels} preferred={promoteRideshare}
+      endpoints={{ pickup: navigation.origin ?? origin, dropoff: navigation.destination ?? destination }} /> : null;
 
 	return (
 		<section className="route-results route-results-page grid min-w-0 gap-5" aria-labelledby="route-results-title">
@@ -77,7 +87,7 @@ export default function RouteResults({ plan, origin, destination, onEditTrip, se
 			</header>
 
 			<p className="text-sm text-[#43534b]" role="status">
-				{plan.routes.length} route {plan.routes.length === 1 ? 'option' : 'options'} · {plan.recommendation.source === 'gemini' ? 'Ranked with Gemini' : 'Ranked using route facts'}
+				{available.length} route {available.length === 1 ? 'option' : 'options'} · {plan.recommendation.source === 'gemini' ? 'Ranked with Gemini' : 'Ranked using route facts'}
 			</p>
 
 			{plan.dataMode === 'demo' && (
@@ -90,7 +100,9 @@ export default function RouteResults({ plan, origin, destination, onEditTrip, se
 				<section aria-labelledby="best-route-heading" className="grid gap-3">
 					<h2 id="best-route-heading" className="text-xs font-bold uppercase tracking-wide text-[#43534b]">Best match</h2>
 					<RouteCard
+						navigation={navigation}
 						route={bestRoute.route}
+						preferred={bestRoute.route.mode === preferredMode}
 						labels={bestRoute.labels}
 						summary={bestRoute.route.steps[0]?.instruction}
 						whyChosen={routeReason(bestRoute.labels, plan)}
@@ -102,14 +114,19 @@ export default function RouteResults({ plan, origin, destination, onEditTrip, se
 				</section>
 			)}
 
+			{promoteRideshare && rideshareSection}
 			{otherRoutes.length > 0 && (
 				<section aria-labelledby="other-routes-heading" className="grid gap-3">
 					<h2 id="other-routes-heading" className="text-xs font-bold uppercase tracking-wide text-[#68766f]">All other options</h2>
-					<div className="grid min-w-0 gap-4 md:grid-cols-2">
+					{preferredRouteId && <p className="field-hint">Your preferred mode is shown first among comparable alternatives. Best match keeps its factual ranking.</p>}
+					<div className={`grid min-w-0 gap-4 ${horizontalSecondary ? '' : 'md:grid-cols-2'}`}>
 						{otherRoutes.map(entry => (
 							<RouteCard
+								navigation={navigation}
 								key={entry.route.id}
+								layout={horizontalSecondary ? 'horizontal' : 'vertical'}
 								route={entry.route}
+								preferred={entry.route.mode === preferredMode}
 								labels={entry.labels}
 								summary={entry.route.steps[0]?.instruction}
 								whyChosen={routeReason(entry.labels, plan)}
@@ -128,10 +145,9 @@ export default function RouteResults({ plan, origin, destination, onEditTrip, se
 				</p>
 			)}
 
-			{(plan.rideshares ?? []).length > 0 && (
-				<RideshareOptions options={plan.rideshares ?? []} labelsById={rideshareLabels} />
-			)}
+			{!promoteRideshare && rideshareSection}
 
+			<NonRecommendedRoutes routes={restricted} origin={origin} destination={destination} selectedStop={selectedStop} navigation={navigation} />
 			{pageWarnings.length > 0 && (
 				<ul className="grid gap-1 rounded-sm bg-white px-4 py-3 text-xs leading-5 text-[#715522]">
 					{pageWarnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}

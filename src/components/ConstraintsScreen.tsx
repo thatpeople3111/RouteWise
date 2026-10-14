@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import type { RideshareProvider } from '@/lib/types';
 import type { TripDraft } from '@/lib/tripDraft';
 import SliderNumberInput from '@/components/SliderNumberInput';
+import type { TransportModePreference, RoutePriority } from '@/lib/preferences';
 
 type ConstraintsScreenProps = {
 	draft: TripDraft;
@@ -50,6 +51,19 @@ export default function ConstraintsScreen({ draft, onChange, onBack, onStart }: 
 					</div>
 					<p className="step-progress" aria-hidden="true"><span className="step-dot" /> Trip details <span className="step-sep">→</span> <span className="step-dot is-active" /> Preferences</p>
 					{draft.destinationPlace && <p className="field-hint">Destination: <strong>{draft.destinationPlace.name}</strong> · {draft.destinationPlace.formattedAddress}</p>}
+					{draft.usingSavedDefaults && <p className="field-hint">Started with your saved defaults. Changes here affect only this trip.{draft.savedDefaultsLimited ? ' Saved limits were capped at the supported trip maximums.' : ''}</p>}
+					<div className="preference-grid">
+						<label className="field"><span className="field-label">Preferred transportation for this trip</span>
+							<select value={draft.preferredTransportMode ?? ''} onChange={event => onChange({ preferredTransportMode: (event.target.value || undefined) as TransportModePreference | undefined })}>
+								<option value="">No preference</option><option value="PUBLIC_TRANSIT">Public Transit</option><option value="DRIVING">Driving</option><option value="WALKING">Walking</option><option value="RIDESHARE">Rideshare</option>
+								</select><span className="field-hint">Highlights your preferred mode in results. All enabled options remain available.{draft.preferredTransportMode === 'DRIVING' ? ' Confirm car availability below.' : ''}</span>
+						</label>
+						<label className="field"><span className="field-label">Optimize this trip for</span>
+							<select value={draft.routePriority ?? 'BEST'} onChange={event => onChange({ routePriority: event.target.value as RoutePriority })}>
+								<option value="BEST">Best</option><option value="FASTEST">Fastest</option><option value="CHEAPEST">Cheapest</option>
+								</select>
+						</label>
+					</div>
 
 					<section className="form-section preferences-section" aria-labelledby="preferences-title">
 						<div className="section-heading">

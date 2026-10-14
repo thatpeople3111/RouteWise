@@ -8,10 +8,11 @@ import RouteCard from './RouteCard';
 import RideshareOptions from './RideshareOptions';
 import type { Location, SuggestedStop, TripPlan } from '@/lib/types';
 import type { LongDistanceView } from '@/lib/longDistance';
+import type { NormalNavigationEndpoints } from '@/lib/startNavigation';
 
 
 
-function JourneyCard({ journey }: { journey: LongDistanceView['journeys'][number] }) {
+function JourneyCard({ journey, origin, destination, navigation }: { journey: LongDistanceView['journeys'][number]; origin: Location; destination: Location; navigation?: NormalNavigationEndpoints }) {
   return (
     <article className="long-distance-card">
       <header className="rideshare-option-head">
@@ -38,14 +39,14 @@ function JourneyCard({ journey }: { journey: LongDistanceView['journeys'][number
       </dl>}
       <CostBreakdown cost={journey.cost} />
       <details><summary>First-mile transportation</summary>
-        {journey.firstMile?.mode === 'AT_HUB' ? <p>You are already at the departure hub.</p> : <RideshareOptions headingId={`${journey.id}-first-rides`} options={(journey.firstMile?.rideshares ?? []).map(ride => ({ ...ride, id: `${journey.id}-first-${ride.id}` }))} />}
+        {journey.firstMile?.mode === 'AT_HUB' ? <p>You are already at the departure hub.</p> : <RideshareOptions headingId={`${journey.id}-first-rides`} endpoints={{ pickup: navigation?.origin ?? origin, dropoff: journey.originHub ? { ...journey.originHub.coordinates, label: journey.originHub.name } : undefined }} options={(journey.firstMile?.rideshares ?? []).map(ride => ({ ...ride, id: `${journey.id}-first-${ride.id}` }))} />}
       </details>
       <section className="journey-ground" aria-labelledby={`${journey.id}-ground`}>
         <h4 id={`${journey.id}-ground`}>DESTINATION TRANSPORTATION</h4>
         <p>After arrival at {journey.destinationHub?.name}</p>
         <h5>RIDESHARE</h5>
         {journey.lastMile?.mode === 'AT_HUB' ? <p>Your destination is the arrival hub; no extra ride is needed.</p> :
-          <RideshareOptions headingId={`${journey.id}-last-rides`} options={(journey.lastMile?.rideshares ?? []).map(ride => ({ ...ride, id: `${journey.id}-last-${ride.id}` }))} />}
+          <RideshareOptions headingId={`${journey.id}-last-rides`} endpoints={{ pickup: journey.destinationHub ? { ...journey.destinationHub.coordinates, label: journey.destinationHub.name } : undefined, dropoff: navigation?.destination ?? destination }} options={(journey.lastMile?.rideshares ?? []).map(ride => ({ ...ride, id: `${journey.id}-last-${ride.id}` }))} />}
         <h5>RENTAL CARS</h5>
         <RentalCards rentals={journey.rentals ?? []} />
       </section>
@@ -88,7 +89,8 @@ function CostBreakdown({ cost }: { cost: LongDistanceView['journeys'][number]['c
   </div>;
 }
 
-export default function LongDistanceResults({ plan, origin, destination, selectedStop, onEditTrip }: {
+export default function LongDistanceResults({ plan, origin, destination, selectedStop, onEditTrip, navigation }: {
+  navigation?: NormalNavigationEndpoints;
   plan: TripPlan; origin: Location; destination: Location; selectedStop?: SuggestedStop | null; onEditTrip: () => void;
 }) {
   const data = plan.longDistance!;
@@ -100,11 +102,11 @@ export default function LongDistanceResults({ plan, origin, destination, selecte
       <div className="long-distance-grid">
         {data.journeys.filter(journey => journey.mode === mode).map(journey => mode === 'DRIVING' ? <div key={journey.id}>
           <div className="flex gap-2">{journey.labels.map(label => <span className="long-distance-badge" key={label}>{label}</span>)}</div>
-          {plan.routes.find(route => route.id === journey.id) && <RouteCard route={plan.routes.find(route => route.id === journey.id)!} origin={origin} destination={destination} selectedStop={selectedStop} variant="stranded"
+          {plan.routes.find(route => route.id === journey.id) && <RouteCard route={plan.routes.find(route => route.id === journey.id)!} origin={origin} destination={destination} selectedStop={selectedStop} variant="stranded" navigation={navigation}
             journeyCost={{ totalUsd: journey.cost.totalUsd, knownSubtotalUsd: journey.cost.knownSubtotalUsd, note: 'Vehicle cost is a mileage-based planning proxy, including fuel. Unknown tolls, parking, and stop purchases remain unavailable in the breakdown.' }} />}
           <CostBreakdown cost={journey.cost} />
           <ul className="long-distance-notes">{journey.warnings.map(note => <li key={note}>{note}</li>)}</ul>
-        </div> : <JourneyCard key={journey.id} journey={journey} />)}
+        </div> : <JourneyCard key={journey.id} journey={journey} origin={origin} destination={destination} navigation={navigation} />)}
       </div>
       {!data.journeys.some(journey => journey.mode === mode) && <p>{mode === 'RAIL' ? 'No configured rail corridor serves both endpoints.' : mode === 'FLIGHT' ? 'Flight options unavailable right now: no practical configured airport pair.' : 'Driving route unavailable right now.'}</p>}
     </section>)}

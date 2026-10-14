@@ -6,8 +6,11 @@ import Image from 'next/image';
 import { formatDuration } from '@/lib/formatDuration';
 import type { RideshareOption } from '@/lib/types';
 import type { RouteCardLabel } from '@/components/RouteCard';
+import RideshareProviderAction from './RideshareProviderAction';
+import type { RideshareNavigationEndpoints } from '@/lib/rideshareProviderAction';
 
 type RideshareCardProps = {
+  endpoints?: RideshareNavigationEndpoints;
 	option: RideshareOption;
 	labels?: readonly RouteCardLabel[];
 	variant?: 'results' | 'stranded';
@@ -21,10 +24,6 @@ const providerMeta: Record<RideshareOption['provider'], { name: string; logo: st
 
 function formatMinutes(minutes: number | undefined) {
 	return formatDuration(minutes);
-}
-
-function openExternal(url: string) {
-	window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function badgeStyle(label: RouteCardLabel) {
@@ -43,7 +42,7 @@ function legacyFare(option: RideshareOption): import('@/lib/pricing').FareEstima
     label: option.priceSource === 'provider' ? 'Live provider price' : 'Estimated fare', appliesToTrip: true };
 }
 
-export default function RideshareCard({ option, labels = [], variant = 'results' }: RideshareCardProps) {
+export default function RideshareCard({ option, labels = [], variant = 'results', endpoints }: RideshareCardProps) {
 	const meta = providerMeta[option.provider];
 	const titleId = `rideshare-card-${option.id}-title`;
 	const providerKey = option.provider.toLowerCase();
@@ -130,15 +129,7 @@ export default function RideshareCard({ option, labels = [], variant = 'results'
 				</ul>
 			)}
 
-			{(fare.bookingUrl ?? option.bookingUrl) && (
-				<button
-					type="button"
-					className="rideshare-option-action"
-					onClick={() => openExternal((fare.bookingUrl ?? option.bookingUrl)!)}
-				>
-					{meta.actionLabel}
-				</button>
-			)}
+      <RideshareProviderAction option={option} endpoints={endpoints} variant={variant} label={meta.actionLabel} />
 		</article>
 	);
 }

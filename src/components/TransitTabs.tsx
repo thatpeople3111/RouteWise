@@ -5,9 +5,16 @@ import { formatDuration } from '@/lib/formatDuration';
 import type { Location, RouteOption, TransitAlternative } from '@/lib/types';
 import Map from '@/components/Map';
 import FarePrice from './FarePrice';
-import { combineAdjacentWalkingSegments } from '@/lib/transitDisplay';
+import { buildTransitJourneyLabel, combineAdjacentWalkingSegments, resolveTransitBranding } from '@/lib/transitDisplay';
+import { getShortConstraintMessage } from '@/lib/routeWarnings';
+import { routeAvailabilityCategory } from '@/lib/routeAvailability';
+import RouteStart from './RouteStart';
+import type { NormalNavigationEndpoints } from '@/lib/startNavigation';
+import type { SuggestedStop } from '@/lib/types';
 
 type TransitTabsProps = {
+	navigation?: NormalNavigationEndpoints;
+	selectedStop?: SuggestedStop | null;
 	variant?: 'results' | 'stranded';
 	route: RouteOption;
 	origin: Location;
@@ -23,7 +30,7 @@ function formatMoney(amount: number, currency: string) {
 }
 
 function lineLabel(alt: TransitAlternative): string {
-	return alt.title;
+	return buildTransitJourneyLabel(alt.steps);
 }
 
 function fareText(alt: TransitAlternative): string {
@@ -37,24 +44,19 @@ function stepInstruction(step: TransitAlternative['steps'][number]): string {
 		return minutes !== null ? `Walk ${formatDuration(minutes)}` : 'Walk';
 	}
 	if (step.mode === 'TRANSIT' && step.transit) {
-		const line = step.transit.line ?? step.transit.lineShortName ?? step.transit.vehicleName ?? '';
-		const rawVehicle = step.transit.vehicleType ?? step.transit.vehicleName ?? '';
-		const modeLabel = /subway|metro|rail|train/i.test(rawVehicle) ? 'Rail'
-			: /bus/i.test(rawVehicle) ? 'Bus'
-			: /tram|light/i.test(rawVehicle) ? 'Tram'
-			: 'Transit';
-		return line ? `${modeLabel} ${line}` : modeLabel;
+		return resolveTransitBranding(step.transit).displayName;
 	}
 	return step.instruction || (step.mode === 'TRANSIT' ? 'Transit' : step.mode);
 }
 
-export default function TransitTabs({ route, origin, destination, variant = 'results' }: TransitTabsProps) {
+export default function TransitTabs({ route, origin, destination, variant = 'results', navigation, selectedStop }: TransitTabsProps) {
 	const alternatives = route.transitAlternatives ?? [];
 	const [selectedId, setSelectedId] = useState<string>(() =>
 		alternatives.find(alt => alt.recommended)?.id ?? alternatives[0]?.id ?? '',
 	);
 	const selected = alternatives.find(alt => alt.id === selectedId) ?? alternatives[0];
 	const showTabs = alternatives.length > 1;
+	const selectedWarning = getShortConstraintMessage(selected?.availability, selected);
 	const displaySteps = combineAdjacentWalkingSegments(selected?.steps ?? []);
 	// Map expects a RouteOption; shape one from the selected alternative's own geometry/data.
 	const mapRoute: RouteOption = selected
@@ -79,6 +81,7 @@ export default function TransitTabs({ route, origin, destination, variant = 'res
 				<div className="transit-tab-bar" role="tablist" aria-label="Transit options">
 					{alternatives.map(alt => {
 						const selectedAlt = alt.id === selected.id;
+						const warning = getShortConstraintMessage(alt.availability, alt);
 						return (
 							<button
 								key={alt.id}
@@ -94,22 +97,22 @@ export default function TransitTabs({ route, origin, destination, variant = 'res
 									{alt.walkingMinutes !== null ? ` · ${formatDuration(alt.walkingMinutes)} walk` : ''}
 								</span>
 								{alt.availability?.available === false && (
-									<span className="transit-tab-unavailable">Unavailable</span>
+									<span className="transit-tab-unavailable">{routeAvailabilityCategory(alt.availability) === 'USER_CONSTRAINT' ? 'Not recommended' : 'Unavailable'}</span>
 								)}
-								{alt.recommended && <span className="transit-tab-badge">Recommended</span>}
+								{warning && <span className="transit-tab-warning">{warning}</span>}
+								{alt.warnings.filter(text => text !== alt.availability?.message).map((text, index) => <span className="transit-tab-warning" key={index}>{text}</span>)}
+								{alt.recommended && alt.availability?.available !== false && <span className="transit-tab-badge">Recommended</span>}
 							</button>
 						);
 					})}
 				</div>
 			)}
 
-			{selected.availability?.available === false && selected.availability.message && (
-				<p className="transit-option-unavailable" role="status">{selected.availability.message}</p>
+			{!showTabs && selected.availability?.available === false && (
+				<p className="route-constraint-warning" role="status"><strong>{routeAvailabilityCategory(selected.availability) === 'USER_CONSTRAINT' ? 'Not recommended' : 'Unavailable'}</strong>{selectedWarning && <span>{selectedWarning}</span>}</p>
 			)}
-			{/* Surface unavailable reasons for non-selected options too, so no constraint is hidden. */}
-			{alternatives.filter(alt => alt.id !== selected.id && alt.availability?.available === false).map(alt => (
-				<p key={alt.id} className="transit-option-unavailable" role="status">{alt.title}: {alt.availability?.message}</p>
-			))}
+      {navigation && <RouteStart key={`${selected.id}:${JSON.stringify(navigation)}`} {...navigation} tripOrigin={origin} tripDestination={destination} selectedStop={selectedStop}
+				route={{ ...mapRoute, id: selected.id, availability: selected.availability, durationMinutes: selected.durationMinutes, distanceMeters: selected.distanceMeters }} />}
 
 			{origin && destination && (
 				<div className="mt-3">
@@ -133,6 +136,7 @@ export default function TransitTabs({ route, origin, destination, variant = 'res
 							{isTransfer && <span className="transit-transfer">Transfer</span>}
 							<span className="transit-step-label">
 								{stepInstruction(step)}
+								{step.transit?.headsign && <span className="transit-stop"> toward {step.transit.headsign}</span>}
 								{step.mode === 'WALK' && step.instruction && <span className="transit-stop"> · {step.instruction}</span>}
 								{step.transit?.departureStop && <span className="transit-stop"> at {step.transit.departureStop}</span>}
 								{step.transit?.arrivalStop && <span className="transit-stop"> → {step.transit.arrivalStop}</span>}
@@ -148,9 +152,9 @@ export default function TransitTabs({ route, origin, destination, variant = 'res
 				})}
 			</ol>
 
-			{selected.warnings.length > 0 && (
+			{!showTabs && selected.warnings.filter(text => text !== selected.availability?.message).length > 0 && (
 				<ul className="transit-warnings">
-					{selected.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+					{selected.warnings.filter(text => text !== selected.availability?.message).map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
 				</ul>
 			)}
 		</div>

@@ -7,10 +7,12 @@ import { findSafeWaitPlaces, planTrip, resolveLocation } from '@/lib/api';
 import type { SelectedTripPlace } from '@/lib/tripDraft';
 import { tripRequestSchema } from '@/lib/validation';
 import type { Coordinates, SafeWaitCandidate, TripInput, TripPlan } from '@/lib/types';
+import { resolveCurrentLocationName } from '@/lib/currentLocation';
+import type { SafePlaceContinuationContext } from '@/lib/safePlaceHandoff';
 
 type LocationState =
   | { status: 'locating' }
-  | { status: 'ready'; coordinates: Coordinates }
+  | { status: 'ready'; coordinates: Coordinates; accuracyMeters?: number }
   | { status: 'error'; message: string };
 
 type SafeWaitState =
@@ -38,6 +40,7 @@ function locationErrorMessage(error: GeolocationPositionError): string {
 
 export default function StrandedMode({ onExit }: StrandedModeProps) {
   const [location, setLocation] = useState<LocationState>({ status: 'locating' });
+  const [locationLabel, setLocationLabel] = useState('Current location');
   const [destination, setDestination] = useState('');
   const [destinationPlace, setDestinationPlace] = useState<SelectedTripPlace | null>(null);
   const [destinationChoices, setDestinationChoices] = useState<SelectedTripPlace[]>([]);
@@ -45,8 +48,19 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [safeWait, setSafeWait] = useState<SafeWaitState>({ status: 'idle' });
+  const [safePlaceContinuation, setSafePlaceContinuation] = useState<SafePlaceContinuationContext | null>(null);
+  const currentCoordinates = location.status === 'ready' ? location.coordinates : null;
+  const currentAccuracy = location.status === 'ready' ? location.accuracyMeters : undefined;
+  useEffect(() => {
+    let active = true;
+    if (currentCoordinates) {
+      void resolveCurrentLocationName(currentCoordinates, currentAccuracy).then(name => { if (active) setLocationLabel(name); });
+    }
+    return () => { active = false; };
+  }, [currentCoordinates, currentAccuracy]);
 
   function retryCurrentLocation() {
+    setLocationLabel('Current location');
     if (!navigator.geolocation) {
       setLocation({ status: 'error', message: 'Location is not supported by this browser.' });
       return;
@@ -57,6 +71,7 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
       ({ coords }) => setLocation({
         status: 'ready',
         coordinates: { latitude: coords.latitude, longitude: coords.longitude },
+        accuracyMeters: coords.accuracy,
       }),
       geolocationError => setLocation({ status: 'error', message: locationErrorMessage(geolocationError) }),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
@@ -78,6 +93,7 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
         setLocation({
           status: 'ready',
           coordinates: { latitude: coords.latitude, longitude: coords.longitude },
+          accuracyMeters: coords.accuracy,
         });
       },
       geolocationError => {
@@ -141,21 +157,29 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
   if (plan && location.status === 'ready') {
     return (
       <div className="stranded-results">
-        <button className="stranded-back" type="button" onClick={() => setPlan(null)}>
+        <button className="stranded-back" type="button" onClick={() => { setSafePlaceContinuation(null); setPlan(null); }}>
           <span aria-hidden="true">←</span> Back to destination
         </button>
         <div className="stranded-results-meta" role="status">
           <span className="stranded-ready-dot" aria-hidden="true" />
-          <span className="stranded-current-location">Current Location</span>
+          <span className="stranded-current-location">{locationLabel}</span>
           <span aria-hidden="true" className="stranded-meta-sep">·</span>
           <span className="stranded-meta-destination">Destination: <strong>{destination.trim()}</strong></span>
         </div>
         <StrandedResults
+          safePlaceContinuation={safePlaceContinuation}
+          navigation={{
+            origin: { ...location.coordinates, label: locationLabel },
+            destination: destinationPlace ?? undefined,
+          }}
           plan={plan}
           origin={location.coordinates}
           destination={destinationPlace ? { placeId: destinationPlace.placeId } : { address: destination.trim() }}
           safePlaces={(
             <SafePlaceRoutes
+              onContinuationChange={setSafePlaceContinuation}
+              continuationRoutes={plan.routes}
+              originalDestination={destinationPlace ?? undefined}
               origin={location.coordinates}
               status={safeWait.status === 'idle' ? 'loading' : safeWait.status}
               best={safeWait.status === 'ready' ? safeWait.best : null}
@@ -182,7 +206,7 @@ export default function StrandedMode({ onExit }: StrandedModeProps) {
       </header>
       <div className={`stranded-location-state ${location.status === 'error' ? 'is-error' : ''}`} role="status" aria-live="polite">
         {location.status === 'locating' && <><span className="planning-orb stranded-location-orb" aria-hidden="true"><span className="planning-orb-halo" /><span className="planning-orb-core" /><span className="planning-orb-glint" /></span>Getting your current location…</>}
-        {location.status === 'ready' && <><span className="stranded-ready-dot" aria-hidden="true" /><span className="stranded-current-location">Current Location</span></>}
+        {location.status === 'ready' && <><span className="stranded-ready-dot" aria-hidden="true" /><span className="stranded-current-location">{locationLabel}</span></>}
         {location.status === 'error' && <span role="alert">{location.message}</span>}
       </div>
       {location.status === 'error' && <button className="stranded-retry" type="button" onClick={retryCurrentLocation}>Try location again</button>}

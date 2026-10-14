@@ -3,6 +3,7 @@
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader';
 import { useEffect, useRef, useState } from 'react';
 import type { Location, RouteOption, SuggestedStop } from '@/lib/types';
+import { locationDisplayName } from '@/lib/currentLocation';
 
 type MapProps = {
 	origin: Location;
@@ -73,7 +74,7 @@ function selectedStopLocation(stop: SuggestedStop | null | undefined): Location 
 function describeLocation(location: Location): string {
 	if ('address' in location) return location.address;
 	if ('placeId' in location) return 'Selected place';
-	return `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`;
+	return locationDisplayName(location);
 }
 
 async function resolvePoint(

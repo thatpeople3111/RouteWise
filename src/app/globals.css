@@ -1571,6 +1571,61 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
 .rideshare-option-stranded .rideshare-option-unavailable { color: #ffc9ca; }
 .rideshare-option-stranded .rideshare-option-unavailable-detail { color: #c0aeb3; }
 .rideshare-option-stranded.is-unavailable { background: #1b1b26; }
+.rideshare-option-waymo.is-unavailable { background: rgba(109, 88, 40, 0.12); border-color: rgba(226, 173, 66, 0.32); }
+.rideshare-option-waymo.rideshare-option-stranded.is-unavailable { background: #242220; }
+.non-recommended-routes { min-width: 0; }
+.google-auth-test { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; color: #c0aeb3; font-size: 12px; }
+.google-auth-test p { flex-basis: 100%; margin: 0; }
+.auth-callback { margin: 48px auto; max-width: 640px; padding: 24px; color: #dce7f8; }
+.auth-callback a { color: #9cc5ff; text-decoration: underline; }
+.email-auth { margin-top: 16px; color: #c0aeb3; font-size: 13px; }
+.email-auth summary { cursor: pointer; }
+.email-auth-modes { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.email-auth form { display: grid; gap: 12px; max-width: 400px; }
+.email-auth label { display: grid; gap: 6px; }
+.email-auth input { width: 100%; min-width: 0; padding: 10px; background: #1b1b26; color: #dce7f8; border: 1px solid #45323a; border-radius: 6px; }
+.site-header { gap: 16px; }
+.account-menu { position: relative; flex-shrink: 0; z-index: 40; }
+.account-trigger { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #2b3d58; border-radius: 12px; background: #111d30; color: #dce7f8; font-size: 13px; cursor: pointer; list-style: none; }
+.account-trigger::-webkit-details-marker { display: none; }
+.account-avatar { display: inline-grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; background: #1e4f9b; color: #d8eaff; font-weight: 700; }
+.account-menu[open] .account-chevron { transform: rotate(180deg); }
+.account-panel { position: absolute; top: calc(100% + 12px); right: 0; width: min(360px, calc(100vw - 32px)); padding: 20px; max-height: calc(100dvh - 110px); overflow-y: auto; border: 1px solid #2b3d58; border-radius: 16px; background: #0e192b; color: #dce7f8; box-shadow: 0 16px 40px rgba(0,0,0,.4); }
+.account-panel h2 { margin: 0 0 8px; font-size: 16px; font-weight: 650; }
+.account-hint, .account-panel p { font-size: 12px; line-height: 1.5; color: #9badc5; overflow-wrap: anywhere; }
+.account-panel .location-button, .account-action { display: block; width: 100%; text-align: center; padding: 10px 12px; border-radius: 10px; border: 1px solid #2b3d58; background: #172b49; color: #dce7f8; font-size: 13px; cursor: pointer; }
+.account-panel .location-button:hover:not(:disabled), .account-action:hover { background: #1d3962; border-color: #5799ff; }
+.account-panel button:disabled { opacity: .55; cursor: wait; }
+.account-action { margin-top: 10px; }
+.account-trigger:focus-visible, .account-panel button:focus-visible, .account-panel input:focus-visible { outline: 2px solid #71adff; outline-offset: 3px; }
+.account-panel .google-auth-test { display: grid; margin-top: 14px; }
+.account-panel .email-auth { margin-top: 12px; color: #dce7f8; }
+.account-panel .email-auth input { background: #0b1422; border-color: #2b3d58; }
+.account-panel .email-auth [role="alert"], .account-panel .google-auth-test [role="alert"] { color: #ffc9ca; }
+.account-back { color: #9cc5ff; font-size: 12px; cursor: pointer; margin: 8px 0; }
+.account-identity { display: flex; gap: 12px; align-items: flex-start; }
+.account-identity > div { min-width: 0; overflow-wrap: anywhere; }
+.account-identity p { margin: 4px 0; }
+.account-status { display: block; font-size: 11px; margin-top: 4px; color: #9cc5ff; }
+.account-profile { border-top: 1px solid #2b3d58; margin-top: 16px; padding-top: 16px; }
+.account-panel [role="alert"] { color: #ffc9ca; }
+.account-defaults { display: grid; grid-template-columns: 1fr 1.3fr; gap: 8px; margin: 12px 0; font-size: 12px; }
+.account-defaults dt { color: #9badc5; }
+.account-defaults dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .site-header .header-caption { display: none; } .account-panel { padding: 16px; } }
+@media (min-width: 900px) {
+  .horizontal-route-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; }
+  .horizontal-route-content > * { grid-column: 1; min-width: 0; }
+  .horizontal-route-content > .route-card-map { grid-column: 2; grid-row: 1 / span 6; align-self: start; margin-top: 0; }
+  .horizontal-route-content > .transit-tabs { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; }
+  .horizontal-route-content .transit-tabs > * { grid-column: 1; min-width: 0; }
+  .horizontal-route-content .transit-tabs > .transit-tab-bar { grid-column: 1 / -1; }
+  .horizontal-route-content .transit-tabs > .mt-3 { grid-column: 2; grid-row: 2 / span 6; align-self: start; }
+}
+.non-recommended-routes > summary { cursor: pointer; padding: 12px 0; font-size: 13px; font-weight: 600; color: #68766f; }
+.non-recommended-routes.is-stranded > summary { color: #c0aeb3; }
+.non-recommended-route-list { display: grid; min-width: 0; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 768px) { .non-recommended-route-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .rideshare-option-stranded .rideshare-option-action { border-color: #ff7276; background: #a92634; box-shadow: 0 0 16px rgba(255, 65, 76, 0.25); }
 .rideshare-option-stranded .rideshare-option-action:hover { background: #c4303d; }
 .rideshare-option-stranded .rideshare-option-overbudget { background: rgba(255, 190, 92, 0.14); color: #ffce8a; }
@@ -1807,6 +1862,7 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
   text-align: left;
   min-width: 0;
   transition: border-color 140ms ease, background 140ms ease;
+  max-width: 100%;
 }
 .transit-tab:hover { border-color: #5799ff; background: #111d30; }
 .transit-tab:focus-visible { outline: 2px solid #71adff; outline-offset: 2px; }
@@ -1816,7 +1872,28 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
   color: #f3f8ff;
   box-shadow: 0 0 0 1px rgba(100, 164, 255, 0.4);
 }
-.transit-tab.is-unavailable { opacity: 0.7; }
+.transit-tab.is-unavailable { opacity: 1; border-color: #806439; }
+.transit-tab.is-unavailable .transit-tab-title,
+.transit-tab.is-unavailable .transit-tab-sub { opacity: 0.75; }
+.transit-tab-warning {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #f0cf8b;
+}
+.route-constraint-warning {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #715522;
+  overflow-wrap: anywhere;
+}
+.stranded-route-card .route-constraint-warning { color: #f0cf8b; }
 .transit-tab-title { font-size: 13px; font-weight: 700; }
 .transit-tab-sub { font-size: 11px; color: #9badc5; }
 .transit-tab.is-selected .transit-tab-sub { color: #c4dcff; }
@@ -1970,3 +2047,5 @@ button[aria-pressed="true"]:not(.schedule-mode button):not(.choice-control butto
 .rideshare-option-price-row .fare-price-value { font-size: 24px; }
 .fare-price details { font-size: 12px; line-height: 1.5; font-weight: 400; }
 .fare-price details summary { cursor: pointer; }
+
+.account-profile select { width: 100%; min-width: 0; padding: 10px; background: #0b1422; color: #dce7f8; border: 1px solid #2b3d58; border-radius: 6px; }
